@@ -17,10 +17,7 @@ import org.fourthline.cling.support.model.PortMapping;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -117,14 +114,16 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                             protocol = PortMapping.Protocol.UDP;
                     }
 
-                    portMappings.add(
-                            new PortMapping(
-                                    port.portNumber,
-                                    localIPs.iterator().next(),
-                                    protocol,
-                                    "Freenet 0.7 " + port.name
-                            )
-                    );
+                    for (String localIP : localIPs) {
+                        portMappings.add(
+                                new PortMapping(
+                                        port.portNumber,
+                                        localIP,
+                                        protocol,
+                                        "Freenet 0.7 " + port.name
+                                )
+                        );
+                    }
                 }
                 registryListener.addPortMappings(portMappings);
 
@@ -189,6 +188,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
             // Unmap old ports
             beforeShutdown(upnpService.getRegistry());
+            // beforeShutdown() doesn't reset activePortMappings so we need to do it here.
+            activePortMappings = new HashMap<>();
 
             for (Service connectionService : connectionServices) {
                 if (connectionService == null || portMappings.length == 0) return;
