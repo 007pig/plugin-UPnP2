@@ -6,6 +6,7 @@ import org.fourthline.cling.UpnpServiceImpl;
 import org.fourthline.cling.model.action.ActionInvocation;
 import org.fourthline.cling.model.message.UpnpResponse;
 import org.fourthline.cling.model.meta.Device;
+import org.fourthline.cling.model.meta.RemoteDevice;
 import org.fourthline.cling.model.meta.Service;
 import org.fourthline.cling.registry.Registry;
 import org.fourthline.cling.support.igd.PortMappingListener;
@@ -19,6 +20,7 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Created by xiaoyu on 12/22/15. 2
@@ -30,23 +32,10 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     private UpnpService upnpService = new UpnpServiceImpl();
 
     private Set<DetectedIP> detectedIPs = new HashSet<>();
+    private Set<String> localIPs = new HashSet<>();
     private IGDRegistryListener registryListener;
 
-    // ###################################
-    // FredPlugin method(s)
-    // ###################################
-
-    @Override
-    public void terminate() {
-        System.out.println("Test plugin ended");
-        // Release all resources and advertise BYEBYE to other UPnP devices
-        upnpService.shutdown();
-    }
-
-    @Override
-    public void runPlugin(PluginRespirator pr) {
-        this.pr = pr;
-
+    public UPnP2() {
         System.out.println("UPnP2 plugin started");
 
         // This will create necessary network resources for UPnP right away
@@ -89,6 +78,25 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             e.printStackTrace();
         }
 
+        registryListener.getExternalIP();
+
+    }
+
+    // ###################################
+    // FredPlugin method(s)
+    // ###################################
+
+    @Override
+    public void terminate() {
+        System.out.println("Test plugin ended");
+        // Release all resources and advertise BYEBYE to other UPnP devices
+        upnpService.shutdown();
+    }
+
+    @Override
+    public void runPlugin(PluginRespirator pr) {
+        this.pr = pr;
+
     }
 
     // ###################################
@@ -103,7 +111,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         registryListener.getExternalIP(latch);
 
         try {
-            latch.await();
+            latch.await(1, TimeUnit.SECONDS);
             return detectedIPs.toArray(new DetectedIP[detectedIPs.size()]);
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -115,35 +123,37 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     public void onChangePublicPorts(Set<ForwardPort> ports, ForwardPortCallback cb) {
         System.out.println("Calling onChangePublicPorts()");
 
-        try {
-            String localAddress = InetAddress.getLocalHost().toString();
-            Set<PortMapping> portMappings = new HashSet<>();
-            for (ForwardPort port : ports) {
-                PortMapping.Protocol protocol;
-                switch (port.protocol) {
-                    case ForwardPort.PROTOCOL_UDP_IPV4:
-                        protocol = PortMapping.Protocol.UDP;
-                        break;
-                    case ForwardPort.PROTOCOL_TCP_IPV4:
-                        protocol = PortMapping.Protocol.TCP;
-                        break;
-                    default:
-                        protocol = PortMapping.Protocol.UDP;
+        if (localIPs.size() > 0) {
+            try {
+                String localAddress = InetAddress.getLocalHost().toString();
+                Set<PortMapping> portMappings = new HashSet<>();
+                for (ForwardPort port : ports) {
+                    PortMapping.Protocol protocol;
+                    switch (port.protocol) {
+                        case ForwardPort.PROTOCOL_UDP_IPV4:
+                            protocol = PortMapping.Protocol.UDP;
+                            break;
+                        case ForwardPort.PROTOCOL_TCP_IPV4:
+                            protocol = PortMapping.Protocol.TCP;
+                            break;
+                        default:
+                            protocol = PortMapping.Protocol.UDP;
+                    }
+
+                    portMappings.add(
+                            new PortMapping(
+                                    port.portNumber,
+                                    localIPs.iterator().next(),
+                                    protocol,
+                                    "Freenet 0.7 " + port.name
+                            )
+                    );
                 }
+                registryListener.addPortMappings(portMappings);
 
-                portMappings.add(
-                        new PortMapping(
-                                port.portNumber,
-                                localAddress,
-                                protocol,
-                                "Freenet 0.7 " + port.name
-                        )
-                );
+            } catch (UnknownHostException e) {
+                e.printStackTrace();
             }
-            registryListener.addPortMappings(portMappings);
-
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
         }
 
     }
@@ -166,11 +176,14 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         @Override
         synchronized public void deviceAdded(Registry registry, Device device) {
 
+            System.out.println("Remote device available: " + device.getDisplayString());
+
             Service connectionService;
             if ((connectionService = discoverConnectionService(device)) == null) return;
 
             connectionServices.add(connectionService);
 
+            localIPs.add(((RemoteDevice) device).getIdentity().getDiscoveredOnLocalAddress().getHostAddress());
         }
 
         @Override
@@ -223,6 +236,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         }
 
         public void getExternalIP(final CountDownLatch latch) {
+
+            System.out.println("Try to get external IP");
 
             for (Service connectionService : connectionServices) {
 
