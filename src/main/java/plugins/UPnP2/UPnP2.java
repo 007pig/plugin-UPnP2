@@ -1,6 +1,7 @@
 package plugins.UPnP2;
 
 import freenet.pluginmanager.*;
+import freenet.support.transport.ip.IPUtil;
 import org.fourthline.cling.UpnpService;
 import org.fourthline.cling.UpnpServiceImpl;
 import org.fourthline.cling.model.action.ActionInvocation;
@@ -15,17 +16,18 @@ import org.fourthline.cling.support.igd.callback.PortMappingAdd;
 import org.fourthline.cling.support.model.PortMapping;
 
 import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Created by xiaoyu on 12/22/15. 2
  */
-public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDetector, FredPluginPortForward {
+public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDetector, FredPluginPortForward, FredPluginVersioned, FredPluginRealVersioned {
 
     private PluginRespirator pr;
 
@@ -40,28 +42,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         // This will create necessary network resources for UPnP right away
         System.out.println("Starting Cling...");
-        try {
-            System.out.println(InetAddress.getLocalHost().toString());
-        } catch (UnknownHostException e) {
-            e.printStackTrace();
-        }
-
-        try {
-            Enumeration e = NetworkInterface.getNetworkInterfaces();
-            while(e.hasMoreElements())
-            {
-                NetworkInterface n = (NetworkInterface) e.nextElement();
-                Enumeration ee = n.getInetAddresses();
-                while (ee.hasMoreElements())
-                {
-                    InetAddress i = (InetAddress) ee.nextElement();
-                    System.out.println(i.getHostAddress());
-                }
-            }
-        } catch (SocketException e1) {
-            e1.printStackTrace();
-        }
-
 
         // Add listeners for upnpService
         registryListener = new IGDRegistryListener();
@@ -77,9 +57,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-
-        registryListener.getExternalIP();
-
     }
 
     // ###################################
@@ -88,7 +65,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public void terminate() {
-        System.out.println("Test plugin ended");
+        System.out.println("UPnP2 plugin ended");
         // Release all resources and advertise BYEBYE to other UPnP devices
         upnpService.shutdown();
     }
@@ -156,6 +133,16 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             }
         }
 
+    }
+
+    @Override
+    public long getRealVersion() {
+        return 1;
+    }
+
+    @Override
+    public String getVersion() {
+        return "1.0.0";
     }
 
     // ###################################
@@ -237,6 +224,12 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         public void getExternalIP(final CountDownLatch latch) {
 
+            if (connectionServices.size() == 0) {
+                System.out.println("No internet gateway device detected. Unable to get external address.");
+                latch.countDown();
+                return;
+            }
+
             System.out.println("Try to get external IP");
 
             for (Service connectionService : connectionServices) {
@@ -250,8 +243,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                                     System.out.println("Get external IP: " + externalIPAddress);
 
                                     InetAddress inetAddress = InetAddress.getByName(externalIPAddress);
-
-                                    detectedIPs.add(new DetectedIP(inetAddress, DetectedIP.NOT_SUPPORTED));
+                                    if (IPUtil.isValidAddress(inetAddress, false)) {
+                                        detectedIPs.add(new DetectedIP(inetAddress, DetectedIP.NOT_SUPPORTED));
+                                    }
 
                                 } catch (UnknownHostException e) {
                                     e.printStackTrace();
