@@ -17,8 +17,6 @@
 
 package plugins.UPnP2;
 
-import freenet.pluginmanager.*;
-import freenet.support.transport.ip.IPUtil;
 import org.fourthline.cling.UpnpService;
 import org.fourthline.cling.UpnpServiceImpl;
 import org.fourthline.cling.model.action.ActionInvocation;
@@ -34,14 +32,33 @@ import org.fourthline.cling.support.model.PortMapping;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+
+import freenet.pluginmanager.DetectedIP;
+import freenet.pluginmanager.ForwardPort;
+import freenet.pluginmanager.ForwardPortCallback;
+import freenet.pluginmanager.ForwardPortStatus;
+import freenet.pluginmanager.FredPlugin;
+import freenet.pluginmanager.FredPluginIPDetector;
+import freenet.pluginmanager.FredPluginPortForward;
+import freenet.pluginmanager.FredPluginRealVersioned;
+import freenet.pluginmanager.FredPluginThreadless;
+import freenet.pluginmanager.FredPluginVersioned;
+import freenet.pluginmanager.PluginRespirator;
+import freenet.support.transport.ip.IPUtil;
 
 /**
  * Created by xiaoyu on 12/22/15. 2
  */
-public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDetector, FredPluginPortForward, FredPluginVersioned, FredPluginRealVersioned {
+public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDetector,
+        FredPluginPortForward, FredPluginVersioned, FredPluginRealVersioned {
 
     private PluginRespirator pr;
 
@@ -142,7 +159,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                         protocolName = "UDP";
                 }
 
-                System.out.printf("Mapping port: %s %d (%s)%n", protocolName, port.portNumber, port.name);
+                System.out.printf("Mapping port: %s %d (%s)%n", protocolName, port.portNumber,
+                        port.name);
 
                 // Each service has its own localIPs
                 for (Map.Entry<Service, Set<String>> localIP : localIPs.entrySet()) {
@@ -157,12 +175,12 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                     for (String ip : currentLocalIPs) {
                         // Mapping for each local IP
                         portMappings.add(
-                            new PortMapping(
-                                    port.portNumber,
-                                    ip,
-                                    protocol,
-                                    "Freenet 0.7 " + port.name
-                            )
+                                new PortMapping(
+                                        port.portNumber,
+                                        ip,
+                                        protocol,
+                                        "Freenet 0.7 " + port.name
+                                )
                         );
                     }
                     // Add this port's mappings for this service
@@ -171,8 +189,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                     portMappings.clear();
                 }
             }
-        }
-        else {
+        } else {
             System.out.println("Unable to get localIPs.");
         }
 
@@ -216,13 +233,13 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             // Different localIPs for different services
             Set<String> currentLocalIPs;
             if (localIPs.containsKey(connectionService)) {
-                currentLocalIPs= localIPs.get(connectionService);
-            }
-            else {
+                currentLocalIPs = localIPs.get(connectionService);
+            } else {
                 currentLocalIPs = new HashSet<>();
             }
 
-            currentLocalIPs.add(((RemoteDevice) device).getIdentity().getDiscoveredOnLocalAddress().getHostAddress());
+            currentLocalIPs.add(((RemoteDevice) device).getIdentity().getDiscoveredOnLocalAddress
+                    ().getHostAddress());
 
             localIPs.put(connectionService, currentLocalIPs);
         }
@@ -244,7 +261,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             activePortMappings = new HashMap<>();
         }
 
-        synchronized public void addPortMappings(Service connectionService, Set<PortMapping> newPortMappings, final ForwardPort port, final ForwardPortCallback cb) {
+        synchronized public void addPortMappings(Service connectionService, Set<PortMapping>
+                newPortMappings, final ForwardPort port, final ForwardPortCallback cb) {
 
             if (connectionService == null || newPortMappings.size() == 0) return;
 
@@ -261,23 +279,26 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                         activeForService.add(pm);
 
                         // Notify Fred the port mapping is successful
-                        ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus.MAYBE_SUCCESS, "", pm.getExternalPort().getValue().intValue());
+                        ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
+                                .MAYBE_SUCCESS, "", pm.getExternalPort().getValue().intValue());
 
-                        Map<ForwardPort,ForwardPortStatus> statuses = new HashMap<>();
+                        Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
                         statuses.put(port, status);
 
                         cb.portForwardStatus(statuses);
                     }
 
                     @Override
-                    public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
+                    public void failure(ActionInvocation invocation, UpnpResponse operation,
+                                        String defaultMsg) {
                         handleFailureMessage("Failed to add port mapping: " + pm);
                         handleFailureMessage("Reason: " + defaultMsg);
 
                         // Notify Fred the port mapping is failed
-                        ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus.DEFINITE_FAILURE, defaultMsg, port.portNumber);
+                        ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
+                                .DEFINITE_FAILURE, defaultMsg, port.portNumber);
 
-                        Map<ForwardPort,ForwardPortStatus> statuses = new HashMap<>();
+                        Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
                         statuses.put(port, status);
 
                         cb.portForwardStatus(statuses);
@@ -296,7 +317,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         public void getExternalIP(final CountDownLatch latch) {
 
             if (connectionServices.size() == 0) {
-                System.out.println("No internet gateway device detected. Unable to get external address.");
+                System.out.println("No internet gateway device detected. Unable to get external " +
+                        "address.");
                 latch.countDown();
                 return;
             }
@@ -313,9 +335,11 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                                 try {
                                     System.out.println("Get external IP: " + externalIPAddress);
 
-                                    InetAddress inetAddress = InetAddress.getByName(externalIPAddress);
+                                    InetAddress inetAddress = InetAddress.getByName
+                                            (externalIPAddress);
                                     if (IPUtil.isValidAddress(inetAddress, false)) {
-                                        detectedIPs.add(new DetectedIP(inetAddress, DetectedIP.NOT_SUPPORTED));
+                                        detectedIPs.add(new DetectedIP(inetAddress, DetectedIP
+                                                .NOT_SUPPORTED));
                                     }
 
                                 } catch (UnknownHostException e) {
@@ -329,7 +353,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                             public void failure(ActionInvocation invocation,
                                                 UpnpResponse operation,
                                                 String defaultMsg) {
-                                System.out.println("Unable to get external IP. Reason: " + defaultMsg);
+                                System.out.println("Unable to get external IP. Reason: " +
+                                        defaultMsg);
                                 latch.countDown();
                             }
                         }
