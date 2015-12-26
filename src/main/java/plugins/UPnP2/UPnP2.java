@@ -112,11 +112,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         System.out.println("Calling onChangePublicPorts()");
 
         if (localIPs.size() > 0) {
-            if (ports.size() > 0) {
-                // Remove all old port mappings
-                registryListener.removeAllPortMappings();
-                System.out.println("Removing old port mappings...");
-            }
+            // Remove all old port mappings
+            registryListener.removeAllPortMappings();
+            System.out.println("Removing old port mappings...");
 
             // Sleep a second waiting for the old mappings to be removed
             try {
