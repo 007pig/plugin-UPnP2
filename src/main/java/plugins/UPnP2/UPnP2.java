@@ -65,7 +65,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     private UpnpService upnpService = new UpnpServiceImpl();
 
     private Set<DetectedIP> detectedIPs = new HashSet<>();
-    private HashMap<Service, Set<String>> localIPs = new HashMap<>();
+    private Set<Service> connectionServices = new HashSet<>();
     private IGDRegistryListener registryListener;
 
     // ###################################
@@ -128,7 +128,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     public void onChangePublicPorts(Set<ForwardPort> ports, ForwardPortCallback cb) {
         System.out.println("Calling onChangePublicPorts()");
 
-        if (localIPs.size() > 0) {
+        if (connectionServices.size() > 0) {
             // Remove all old port mappings
             registryListener.removeAllPortMappings();
             System.out.println("Removing old port mappings...");
@@ -141,53 +141,59 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             }
 
             Set<PortMapping> portMappings = new HashSet<>();
-            for (ForwardPort port : ports) {
+            Map<PortMapping, ForwardPort> forwardPortMap = new HashMap<>();
+            for (Service connectionService : connectionServices) {
+                for (ForwardPort port : ports) {
 
-                PortMapping.Protocol protocol;
-                String protocolName;
-                switch (port.protocol) {
-                    case ForwardPort.PROTOCOL_UDP_IPV4:
-                        protocol = PortMapping.Protocol.UDP;
-                        protocolName = "UDP";
-                        break;
-                    case ForwardPort.PROTOCOL_TCP_IPV4:
-                        protocol = PortMapping.Protocol.TCP;
-                        protocolName = "TCP";
-                        break;
-                    default:
-                        protocol = PortMapping.Protocol.UDP;
-                        protocolName = "UDP";
-                }
-
-                System.out.printf("Mapping port: %s %d (%s)%n", protocolName, port.portNumber,
-                        port.name);
-
-                // Each service has its own localIPs
-                for (Map.Entry<Service, Set<String>> localIP : localIPs.entrySet()) {
-
-                    Service currentService = localIP.getKey();
-                    Set<String> currentLocalIPs = localIP.getValue();
-
-                    System.out.println("For device: " + currentService.getDevice());
-                    System.out.println("For service: " + currentService);
-                    System.out.println("For local IPs: " + currentLocalIPs);
-
-                    for (String ip : currentLocalIPs) {
-                        // Mapping for each local IP
-                        portMappings.add(
-                                new PortMapping(
-                                        port.portNumber,
-                                        ip,
-                                        protocol,
-                                        "Freenet 0.7 " + port.name
-                                )
-                        );
+                    PortMapping.Protocol protocol;
+                    String protocolName;
+                    switch (port.protocol) {
+                        case ForwardPort.PROTOCOL_UDP_IPV4:
+                            protocol = PortMapping.Protocol.UDP;
+                            protocolName = "UDP";
+                            break;
+                        case ForwardPort.PROTOCOL_TCP_IPV4:
+                            protocol = PortMapping.Protocol.TCP;
+                            protocolName = "TCP";
+                            break;
+                        default:
+                            protocol = PortMapping.Protocol.UDP;
+                            protocolName = "UDP";
                     }
-                    // Add this port's mappings for this service
-                    registryListener.addPortMappings(currentService, portMappings, port, cb);
-                    // Clear portMappings and get ready for next action
-                    portMappings.clear();
+
+                    System.out.printf("Mapping port: %s %d (%s)%n", protocolName, port.portNumber,
+                            port.name);
+
+                    // Each service has its own local IP
+                    String localIP = ((RemoteDevice) connectionService.getDevice()).getIdentity()
+                            .getDiscoveredOnLocalAddress().getHostAddress();
+
+
+                    System.out.println("For device: " + connectionService.getDevice());
+                    System.out.println("For service: " + connectionService);
+                    System.out.println("For local IP: " + localIP);
+
+                    PortMapping portMapping = new PortMapping(
+                            port.portNumber,
+                            localIP,
+                            protocol,
+                            "Freenet 0.7 " + port.name
+                    );
+
+
+                    // Mapping for each local IP
+                    portMappings.add(portMapping);
+
+                    forwardPortMap.put(portMapping, port);
                 }
+
+                // Add this port's mappings for this service
+                registryListener.addPortMappings(connectionService, portMappings, forwardPortMap,
+                        cb);
+                // Clear portMappings and get ready for next action
+                portMappings.clear();
+                forwardPortMap.clear();
+
             }
         } else {
             System.out.println("Unable to get localIPs.");
@@ -197,7 +203,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public long getRealVersion() {
-        return 1;
+        return 2;
     }
 
     @Override
@@ -214,8 +220,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
      */
     private class IGDRegistryListener extends PortMappingListener {
 
-        private Set<Service> connectionServices = new HashSet<>();
-
         public IGDRegistryListener() {
             super(new PortMapping[0]);
         }
@@ -230,26 +234,14 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
             connectionServices.add(connectionService);
 
-            // Different localIPs for different services
-            Set<String> currentLocalIPs;
-            if (localIPs.containsKey(connectionService)) {
-                currentLocalIPs = localIPs.get(connectionService);
-            } else {
-                currentLocalIPs = new HashSet<>();
-            }
-
-            currentLocalIPs.add(((RemoteDevice) device).getIdentity().getDiscoveredOnLocalAddress
-                    ().getHostAddress());
-
-            localIPs.put(connectionService, currentLocalIPs);
         }
 
         @Override
         synchronized public void deviceRemoved(Registry registry, Device device) {
             super.deviceRemoved(registry, device);
 
-            // Remove Services
             for (Service service : device.findServices()) {
+                // Remove Services
                 connectionServices.remove(service);
             }
         }
@@ -262,7 +254,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         }
 
         synchronized public void addPortMappings(Service connectionService, Set<PortMapping>
-                newPortMappings, final ForwardPort port, final ForwardPortCallback cb) {
+                newPortMappings, final Map<PortMapping, ForwardPort> forwardPortMap, final
+        ForwardPortCallback cb) {
 
             if (connectionService == null || newPortMappings.size() == 0) return;
 
@@ -271,6 +264,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             final List<PortMapping> activeForService = new ArrayList<>();
             for (final PortMapping pm : newPortMappings) {
                 System.out.println("Adding Port Mapping: " + pm);
+
+                final ForwardPort forwardPort = forwardPortMap.get(pm);
+
                 new PortMappingAdd(connectionService, upnpService.getControlPoint(), pm) {
 
                     @Override
@@ -283,7 +279,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                                 .MAYBE_SUCCESS, "", pm.getExternalPort().getValue().intValue());
 
                         Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
-                        statuses.put(port, status);
+                        statuses.put(forwardPort, status);
 
                         cb.portForwardStatus(statuses);
                     }
@@ -296,10 +292,10 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
                         // Notify Fred the port mapping is failed
                         ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
-                                .DEFINITE_FAILURE, defaultMsg, port.portNumber);
+                                .DEFINITE_FAILURE, defaultMsg, forwardPort.portNumber);
 
                         Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
-                        statuses.put(port, status);
+                        statuses.put(forwardPort, status);
 
                         cb.portForwardStatus(statuses);
                     }
@@ -308,10 +304,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
             activePortMappings.put(connectionService, activeForService);
 
-        }
-
-        public void getExternalIP() {
-            getExternalIP(new CountDownLatch(0));
         }
 
         public void getExternalIP(final CountDownLatch latch) {
