@@ -42,8 +42,8 @@ idea {
 }
 
 dependencies {
-    compile group: 'org.fourthline.cling', name: 'cling-core', version: '2.0.1'
-    compile group: 'org.fourthline.cling', name: 'cling-support', version: '2.0.1'
+    compile group: 'org.fourthline.cling', name: 'cling-core', version: '2.1.0'
+    compile group: 'org.fourthline.cling', name: 'cling-support', version: '2.1.0'
     provided name: 'freenet'
     provided name: 'freenet-ext'
     provided name: 'bcprov-jdk15on-152'
