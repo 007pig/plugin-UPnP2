@@ -59,6 +59,7 @@ import freenet.support.transport.ip.IPUtil;
 // TODO: Use Fred's Logger instead of System.out.println()
 // TODO: Find another way to block getAddress() and onChangePublicPorts() instead of Sleeping 5 secs
 // TODO: Implement thinksWeAreDoubleNatted
+// TODO: Integrate with Gradle Witness: https://github.com/WhisperSystems/gradle-witness
 
 /**
  * Second generation of UPnP plugin for Fred which is based on Cling.
