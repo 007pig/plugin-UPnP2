@@ -54,8 +54,14 @@ import freenet.pluginmanager.FredPluginVersioned;
 import freenet.pluginmanager.PluginRespirator;
 import freenet.support.transport.ip.IPUtil;
 
+// TODO: Check port mapping regularly and auto remapping if port mappings don't exist any more
+// TODO: Implement FredPluginBandwidthIndicator
+// TODO: Use Fred's Logger instead of System.out.println()
+// TODO: Find another way to block getAddress() and onChangePublicPorts() instead of Sleeping 5 secs
+
 /**
- * Created by xiaoyu on 12/22/15. 2
+ * Second generation of UPnP plugin for Fred which is based on Cling.
+ * @see <a href="http://4thline.org/projects/cling/">Cling - Java/Android UPnP library and tools</a>
  */
 public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDetector,
         FredPluginPortForward, FredPluginVersioned, FredPluginRealVersioned {
