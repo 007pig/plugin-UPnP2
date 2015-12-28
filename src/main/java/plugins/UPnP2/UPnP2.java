@@ -58,6 +58,7 @@ import freenet.support.transport.ip.IPUtil;
 // TODO: Implement FredPluginBandwidthIndicator
 // TODO: Use Fred's Logger instead of System.out.println()
 // TODO: Find another way to block getAddress() and onChangePublicPorts() instead of Sleeping 5 secs
+// TODO: Implement thinksWeAreDoubleNatted
 
 /**
  * Second generation of UPnP plugin for Fred which is based on Cling.
