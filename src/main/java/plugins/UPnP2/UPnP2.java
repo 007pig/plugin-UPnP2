@@ -176,6 +176,12 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         waitForBooting();
 
+        if (connectionServices.size() > 0) {
+            // Remove all old port mappings
+            System.out.println("Removing old port mappings...");
+            registryListener.removeAllPortMappings();
+        }
+
         if (portMappingScheduler != null) {
             // onChangePublicPorts() is called again
             // We need to setup a new Scheduler pool
@@ -193,9 +199,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             @Override
             public void run() {
                 if (connectionServices.size() > 0) {
-                    // Remove all old port mappings
-                    System.out.println("Removing old port mappings...");
-                    registryListener.removeAllPortMappings();
 
                     // Sleep a second waiting for the old mappings to be removed
                     try {
@@ -226,7 +229,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                             }
 
                             System.out.printf("Mapping port: %s %d (%s)%n", protocolName, port
-                                    .portNumber,
+                                            .portNumber,
                                     port.name);
 
                             // Each service has its own local IP
