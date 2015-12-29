@@ -143,29 +143,29 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         waitForBooting();
 
-        if (connectionServices.size() > 0) {
-            if (detectedIPs.size() > 0) {
-                // IP is found from Service event callback
-                return detectedIPs.toArray(new DetectedIP[detectedIPs.size()]);
-            } else {
-                // Maybe the event is not fired for some reason. We need to request the IP manually.
-                CountDownLatch latch = new CountDownLatch(1);
-                registryListener.getExternalIP(latch);
+        if (connectionServices.size() == 0) {
+            return null;
+        }
 
-                try {
-                    latch.await(1, TimeUnit.SECONDS);
-                    if (detectedIPs.size() > 0) {
-                        return detectedIPs.toArray(new DetectedIP[detectedIPs.size()]);
-                    } else {
-                        return null;
-                    }
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+        if (detectedIPs.size() > 0) {
+            // IP is found from Service event callback
+            return detectedIPs.toArray(new DetectedIP[detectedIPs.size()]);
+        } else {
+            // Maybe the event is not fired for some reason. We need to request the IP manually.
+            CountDownLatch latch = new CountDownLatch(1);
+            registryListener.getExternalIP(latch);
+
+            try {
+                latch.await(1, TimeUnit.SECONDS);
+                if (detectedIPs.size() > 0) {
+                    return detectedIPs.toArray(new DetectedIP[detectedIPs.size()]);
+                } else {
                     return null;
                 }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                return null;
             }
-        } else {
-            return null;
         }
 
     }
