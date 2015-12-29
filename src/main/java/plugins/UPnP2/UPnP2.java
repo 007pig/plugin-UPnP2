@@ -275,7 +275,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     // Implementations
     // ###################################
 
-    private void waitForBooting() {
+    synchronized private void waitForBooting() {
         // If no connection services available and it's the first call,
         // we retry 10 times for the plugin to get enough IGDs
         if (!booted) {
@@ -364,7 +364,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                         if (IPUtil.isValidAddress(inetAddress, false)) {
                             DetectedIP detectedIP = new DetectedIP(inetAddress, DetectedIP
                                     .NOT_SUPPORTED);
-                            if (detectedIPs.contains(detectedIP)) {
+                            if (!detectedIPs.contains(detectedIP)) {
                                 System.out.println("New External IP found: " + externalIPAddress
                                         .toString());
                                 detectedIPs.add(detectedIP);
