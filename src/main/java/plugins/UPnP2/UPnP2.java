@@ -83,6 +83,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     private Set<DetectedIP> detectedIPs = new HashSet<>();
     private Set<Service> connectionServices = new HashSet<>();
+    private Map<Service, SubscriptionCallback> subscriptionCallbacks = new HashMap<>();
     private IGDRegistryListener registryListener;
 
     private boolean booted = false;
@@ -176,12 +177,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         waitForBooting();
 
-        if (connectionServices.size() > 0) {
-            // Remove all old port mappings
-            System.out.println("Removing old port mappings...");
-            registryListener.removeAllPortMappings();
-        }
-
         if (portMappingScheduler != null) {
             // onChangePublicPorts() is called again
             // We need to setup a new Scheduler pool
@@ -199,6 +194,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             @Override
             public void run() {
                 if (connectionServices.size() > 0) {
+                    // Remove all old port mappings
+                    System.out.println("Removing old port mappings...");
+                    registryListener.removeAllPortMappings();
 
                     // Sleep a second waiting for the old mappings to be removed
                     try {
@@ -336,87 +334,31 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             connectionServices.add(connectionService);
 
             // Add service events listener
-            SubscriptionCallback callback = new SubscriptionCallback(connectionService, 600) {
-
-                @Override
-                public void established(GENASubscription sub) {
-                    System.out.println("Established: " + sub.getSubscriptionId());
-                }
-
-                @Override
-                protected void failed(GENASubscription subscription,
-                                      UpnpResponse responseStatus,
-                                      Exception exception,
-                                      String defaultMsg) {
-                    System.err.println(defaultMsg);
-                }
-
-                @Override
-                public void ended(GENASubscription sub,
-                                  CancelReason reason,
-                                  UpnpResponse response) {
-                    System.err.println(reason);
-                }
-
-                @Override
-                public void eventReceived(GENASubscription sub) {
-
-                    Map values = sub.getCurrentValues();
-
-//                    System.out.println(values);
-
-//                    StateVariableValue connectionStatus = (StateVariableValue) values.get
-//                            ("ConnectionStatus");
-                    StateVariableValue externalIPAddress = (StateVariableValue) values.get
-                            ("ExternalIPAddress");
-
-                    try {
-                        InetAddress inetAddress = InetAddress.getByName
-                                (externalIPAddress.toString());
-                        if (IPUtil.isValidAddress(inetAddress, false)) {
-                            DetectedIP detectedIP = new DetectedIP(inetAddress, DetectedIP
-                                    .NOT_SUPPORTED);
-                            if (!detectedIPs.contains(detectedIP)) {
-                                System.out.println("New External IP found: " + externalIPAddress
-                                        .toString());
-                                detectedIPs.add(detectedIP);
-                            }
-                        }
-                        // If the IP address is already got, the next call to getAddress() won't
-                        // need to be blocked.
-                        booted = true;
-                    } catch (UnknownHostException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-                @Override
-                public void eventsMissed(GENASubscription sub, int numberOfMissedEvents) {
-                    System.out.println("Missed events: " + numberOfMissedEvents);
-                }
-
-                @Override
-                protected void invalidMessage(RemoteGENASubscription sub,
-                                              UnsupportedDataException ex) {
-                    // Log/send an error report?
-                }
-            };
-
+            SubscriptionCallback callback = new IDGSubscriptionCallback(connectionService);
             upnpService.getControlPoint().execute(callback);
+            subscriptionCallbacks.put(connectionService, callback);
 
         }
 
         @Override
         synchronized public void deviceRemoved(Registry registry, Device device) {
+
+            System.out.println("Remote device unavailable: " + device.getDisplayString());
+
             super.deviceRemoved(registry, device);
 
             for (Service service : device.findServices()) {
+                // End the subscription
+                subscriptionCallbacks.get(service).end();
+                subscriptionCallbacks.remove(service);
+
                 // Remove Services
                 connectionServices.remove(service);
             }
 
             // Clear detected IPs
             detectedIPs.clear();
+
         }
 
         synchronized public void removeAllPortMappings() {
@@ -562,6 +504,83 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         }
 
+        private class IDGSubscriptionCallback extends SubscriptionCallback {
+
+            public IDGSubscriptionCallback(Service connectionService) {
+                super(connectionService, 600);
+            }
+
+            @Override
+            public void established(GENASubscription sub) {
+                System.out.println("Established: " + sub.getSubscriptionId());
+            }
+
+            @Override
+            protected void failed(GENASubscription subscription,
+                                  UpnpResponse responseStatus,
+                                  Exception exception,
+                                  String defaultMsg) {
+                System.err.println(defaultMsg);
+                if (defaultMsg.equals("RENEWAL_FAILED")) {
+                    this.end();
+                    System.err.println("Subscription failed. Try to re-subscribe.");
+                    SubscriptionCallback callback = new IDGSubscriptionCallback(service);
+                    upnpService.getControlPoint().execute(callback);
+                    subscriptionCallbacks.put(service, callback);
+
+                }
+            }
+
+            @Override
+            public void ended(GENASubscription sub,
+                              CancelReason reason,
+                              UpnpResponse response) {
+                System.err.println(reason);
+            }
+
+            @Override
+            public void eventReceived(GENASubscription sub) {
+
+                Map values = sub.getCurrentValues();
+
+//                    System.out.println(values);
+
+//                    StateVariableValue connectionStatus = (StateVariableValue) values.get
+//                            ("ConnectionStatus");
+                StateVariableValue externalIPAddress = (StateVariableValue) values.get
+                        ("ExternalIPAddress");
+
+                try {
+                    InetAddress inetAddress = InetAddress.getByName
+                            (externalIPAddress.toString());
+                    if (IPUtil.isValidAddress(inetAddress, false)) {
+                        DetectedIP detectedIP = new DetectedIP(inetAddress, DetectedIP
+                                .NOT_SUPPORTED);
+                        if (!detectedIPs.contains(detectedIP)) {
+                            System.out.println("New External IP found: " + externalIPAddress
+                                    .toString());
+                            detectedIPs.add(detectedIP);
+                        }
+                    }
+                    // If the IP address is already got, the next call to getAddress() won't
+                    // need to be blocked.
+                    booted = true;
+                } catch (UnknownHostException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void eventsMissed(GENASubscription sub, int numberOfMissedEvents) {
+                System.out.println("Missed events: " + numberOfMissedEvents);
+            }
+
+            @Override
+            protected void invalidMessage(RemoteGENASubscription sub,
+                                          UnsupportedDataException ex) {
+                // Log/send an error report?
+            }
+        }
     }
 
 }
