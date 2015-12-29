@@ -95,6 +95,15 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     @Override
     public void terminate() {
         System.out.println("UPnP2 plugin ended");
+
+        // Shutdown port mapping scheduler
+        portMappingScheduler.shutdownNow();
+        try {
+            portMappingScheduler.awaitTermination(5, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
         // Release all resources and advertise BYEBYE to other UPnP devices
         upnpService.shutdown();
     }
@@ -351,7 +360,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
                     Map values = sub.getCurrentValues();
 
-                    System.out.println(values);
+//                    System.out.println(values);
 
 //                    StateVariableValue connectionStatus = (StateVariableValue) values.get
 //                            ("ConnectionStatus");
