@@ -506,6 +506,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         private class IDGSubscriptionCallback extends SubscriptionCallback {
 
+            private int renewalFailedCount = 0;
+
             public IDGSubscriptionCallback(Service connectionService) {
                 super(connectionService, 600);
             }
@@ -520,22 +522,41 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                                   UpnpResponse responseStatus,
                                   Exception exception,
                                   String defaultMsg) {
-                System.err.println(defaultMsg);
-                if (defaultMsg.equals("RENEWAL_FAILED")) {
-                    this.end();
-                    System.err.println("Subscription failed. Try to re-subscribe.");
-                    SubscriptionCallback callback = new IDGSubscriptionCallback(service);
-                    upnpService.getControlPoint().execute(callback);
-                    subscriptionCallbacks.put(service, callback);
-
-                }
+                System.err.println("Failed: " + defaultMsg);
+//                if (defaultMsg.equals("RENEWAL_FAILED")) {
+//                    this.end();
+//                    System.err.println("Subscription failed. Try to re-subscribe.");
+//                    SubscriptionCallback callback = new IDGSubscriptionCallback(service);
+//                    upnpService.getControlPoint().execute(callback);
+//                    subscriptionCallbacks.put(service, callback);
+//
+//                }
             }
 
             @Override
             public void ended(GENASubscription sub,
                               CancelReason reason,
                               UpnpResponse response) {
-                System.err.println(reason);
+                System.err.println("Ended: " + reason);
+                System.err.println("Response: " + response);
+                if (reason == CancelReason.RENEWAL_FAILED) {
+                    renewalFailedCount++;
+
+                    if (renewalFailedCount == 5) {
+                        // Some routers doesn't response correct header and Cling won't be able
+                        // to renew it. Then we need to remove and re-subscribe.
+
+                        System.err.println("Renewal failed. Try to re-subscribe.");
+
+                        // Remove current subscription from registry
+                        upnpService.getRegistry().removeRemoteSubscription((RemoteGENASubscription) sub);
+
+                        SubscriptionCallback callback = new IDGSubscriptionCallback(service);
+                        upnpService.getControlPoint().execute(callback);
+                        subscriptionCallbacks.put(service, callback);
+                    }
+
+                }
             }
 
             @Override
@@ -543,7 +564,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
                 Map values = sub.getCurrentValues();
 
-//                    System.out.println(values);
+                System.out.println(values);
 
 //                    StateVariableValue connectionStatus = (StateVariableValue) values.get
 //                            ("ConnectionStatus");
