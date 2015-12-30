@@ -13,8 +13,8 @@ public abstract class GetCommonLinkProperties extends ActionCallback {
 
     @Override
     public void success(ActionInvocation invocation) {
-        int newUpstreamMaxBitRate = (int)invocation.getOutput("NewLayer1UpstreamMaxBitRate").getValue();
-        int newDownstreamMaxBitRate = (int)invocation.getOutput("Layer1DownstreamMaxBitRate").getValue();
+        int newUpstreamMaxBitRate = (int)(invocation.getOutput("NewLayer1UpstreamMaxBitRate").getValue());
+        int newDownstreamMaxBitRate = (int)(invocation.getOutput("Layer1DownstreamMaxBitRate").getValue());
 
         success(newUpstreamMaxBitRate, newDownstreamMaxBitRate);
 

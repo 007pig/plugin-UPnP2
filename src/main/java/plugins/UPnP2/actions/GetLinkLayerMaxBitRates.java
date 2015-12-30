@@ -13,8 +13,8 @@ public abstract class GetLinkLayerMaxBitRates extends ActionCallback {
 
     @Override
     public void success(ActionInvocation invocation) {
-        int newUpstreamMaxBitRate = (int)invocation.getOutput("NewUpstreamMaxBitRate").getValue();
-        int newDownstreamMaxBitRate = (int)invocation.getOutput("NewDownstreamMaxBitRate").getValue();
+        int newUpstreamMaxBitRate = (int)(invocation.getOutput("NewUpstreamMaxBitRate").getValue());
+        int newDownstreamMaxBitRate = (int)(invocation.getOutput("NewDownstreamMaxBitRate").getValue());
 
         success(newUpstreamMaxBitRate, newDownstreamMaxBitRate);
 
