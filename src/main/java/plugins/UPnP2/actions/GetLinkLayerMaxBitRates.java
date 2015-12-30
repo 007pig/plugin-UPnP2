@@ -3,6 +3,7 @@ package plugins.UPnP2.actions;
 import org.fourthline.cling.controlpoint.ActionCallback;
 import org.fourthline.cling.model.action.ActionInvocation;
 import org.fourthline.cling.model.meta.Service;
+import org.fourthline.cling.model.types.UnsignedVariableInteger;
 
 public abstract class GetLinkLayerMaxBitRates extends ActionCallback {
 
@@ -13,8 +14,10 @@ public abstract class GetLinkLayerMaxBitRates extends ActionCallback {
 
     @Override
     public void success(ActionInvocation invocation) {
-        int newUpstreamMaxBitRate = (int)(invocation.getOutput("NewUpstreamMaxBitRate").getValue());
-        int newDownstreamMaxBitRate = (int)(invocation.getOutput("NewDownstreamMaxBitRate").getValue());
+        int newUpstreamMaxBitRate = ((UnsignedVariableInteger) invocation.getOutput
+                ("NewUpstreamMaxBitRate").getValue()).getValue().intValue();
+        int newDownstreamMaxBitRate = ((UnsignedVariableInteger) invocation.getOutput
+                ("NewDownstreamMaxBitRate").getValue()).getValue().intValue();
 
         success(newUpstreamMaxBitRate, newDownstreamMaxBitRate);
 

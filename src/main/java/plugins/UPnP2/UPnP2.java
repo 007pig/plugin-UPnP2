@@ -69,9 +69,7 @@ import freenet.support.transport.ip.IPUtil;
 import plugins.UPnP2.actions.GetCommonLinkProperties;
 import plugins.UPnP2.actions.GetLinkLayerMaxBitRates;
 
-// TODO: Implement FredPluginBandwidthIndicator
 // TODO: Use Fred's Logger instead of System.out.println()
-// TODO: Implement thinksWeAreDoubleNatted
 // TODO: Integrate with Gradle Witness: https://github.com/WhisperSystems/gradle-witness
 // TODO: Check if ports are already mapped before adding them instead of remove all and add
 
@@ -91,7 +89,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     /**
      * Store detected External IPs for different services
      */
-    private Map<Service, DetectedIP> detectedIPs = new HashMap<>();
+    private Map<Device, DetectedIP> detectedIPs = new HashMap<>();
 
     /**
      * Services of type WANIPConnection or WANPPPConnection
@@ -144,8 +142,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         // Send a search message to all devices and services, they should respond soon
         upnpService.getControlPoint().search();
-
-        getUpstramMaxBitRate();
 
     }
 
@@ -289,7 +285,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public long getRealVersion() {
-        return 3;
+        return 4;
     }
 
     // ###################################
@@ -317,11 +313,12 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         int[] rates = getRates();
 
-        System.out.println(rates);
 
         if (rates == null) {
             return -1;
         }
+
+        System.out.println("Upstream MaxBitRate: " + rates[0]);
 
         return rates[0];
     }
@@ -341,6 +338,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         if (rates == null) {
             return -1;
         }
+
+        System.out.println("Downstream MaxBitRate: " + rates[0]);
 
         return rates[1];
     }
@@ -408,7 +407,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                                         (externalIPAddress);
                                 if (IPUtil.isValidAddress(inetAddress, false)) {
                                     detectedIPs.put(getActionInvocation().getAction()
-                                                    .getService(),
+                                                    .getService().getDevice().getRoot(),
                                             new DetectedIP(inetAddress,
                                                     DetectedIP.NOT_SUPPORTED));
                                 }
@@ -449,7 +448,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         for (final Service service : connectionServices) {
             System.out.println("Service Type: " + service.getServiceType().getType());
             if (service.getServiceType().getType().equals("WANPPPConnection")
-                    && detectedIPs.containsKey(service) // Make sure the device isn't double natted
+                    // Make sure the device isn't double natted
+                    // Double natted devices won't have a valid external IP
+                    && detectedIPs.containsKey(service.getDevice().getRoot())
                     ) {
 
                 upnpService.getControlPoint().execute(new GetLinkLayerMaxBitRates(service) {
@@ -504,26 +505,32 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         for (final Service service : commonServices) {
             System.out.println("Service Type: " + service.getServiceType().getType());
 
-            upnpService.getControlPoint().execute(new GetCommonLinkProperties(service) {
-                @Override
-                protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
-                    System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
-                    System.out.println("newDownstreamMaxBitRate: " + newDownstreamMaxBitRate);
+            // Make sure the device isn't double natted
+            // Double natted devices won't have a valid external IP
+            if (detectedIPs.containsKey(service.getDevice().getRoot())) {
+                upnpService.getControlPoint().execute(new GetCommonLinkProperties(service) {
+                    @Override
+                    protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
+                        System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
+                        System.out.println("newDownstreamMaxBitRate: " + newDownstreamMaxBitRate);
 
-                    upRates2.add(newUpstreamMaxBitRate);
-                    downRates2.add(newDownstreamMaxBitRate);
+                        upRates2.add(newUpstreamMaxBitRate);
+                        downRates2.add(newDownstreamMaxBitRate);
 
-                    latch2.countDown();
-                }
+                        latch2.countDown();
+                    }
 
-                @Override
-                public void failure(ActionInvocation invocation, UpnpResponse operation,
-                                    String defaultMsg) {
-                    System.out.println("Unable to get GetCommonLinkProperties. Reason: " +
-                            defaultMsg);
-                    latch2.countDown();
-                }
-            });
+                    @Override
+                    public void failure(ActionInvocation invocation, UpnpResponse operation,
+                                        String defaultMsg) {
+                        System.out.println("Unable to get GetCommonLinkProperties. Reason: " +
+                                defaultMsg);
+                        latch2.countDown();
+                    }
+                });
+            } else {
+                latch2.countDown();
+            }
 
         }
         try {
@@ -744,14 +751,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                               Exception exception,
                               String defaultMsg) {
             System.err.println("Failed: " + defaultMsg);
-//                if (defaultMsg.equals("RENEWAL_FAILED")) {
-//                    this.end();
-//                    System.err.println("Subscription failed. Try to re-subscribe.");
-//                    SubscriptionCallback callback = new IDGSubscriptionCallback(service);
-//                    upnpService.getControlPoint().execute(callback);
-//                    subscriptionCallbacks.put(service, callback);
-//
-//                }
         }
 
         @Override
@@ -788,8 +787,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
             System.out.println(values);
 
-//                    StateVariableValue connectionStatus = (StateVariableValue) values.get
-//                            ("ConnectionStatus");
             StateVariableValue externalIPAddress = (StateVariableValue) values.get
                     ("ExternalIPAddress");
 
@@ -801,7 +798,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                     if (!detectedIPs.values().contains(detectedIP)) {
                         System.out.println("New External IP found: " + externalIPAddress
                                 .toString());
-                        detectedIPs.put(sub.getService(), detectedIP);
+                        System.out.println("For device: " + sub.getService().getDevice().getRoot
+                                ().getDisplayString());
+                        detectedIPs.put(sub.getService().getDevice().getRoot(), detectedIP);
                     }
                 }
                 // If the IP address is already got, the next call to getAddress() won't
