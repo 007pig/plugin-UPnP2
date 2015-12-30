@@ -66,11 +66,14 @@ import freenet.pluginmanager.FredPluginThreadless;
 import freenet.pluginmanager.FredPluginVersioned;
 import freenet.pluginmanager.PluginRespirator;
 import freenet.support.transport.ip.IPUtil;
+import plugins.UPnP2.actions.GetCommonLinkProperties;
+import plugins.UPnP2.actions.GetLinkLayerMaxBitRates;
 
 // TODO: Implement FredPluginBandwidthIndicator
 // TODO: Use Fred's Logger instead of System.out.println()
 // TODO: Implement thinksWeAreDoubleNatted
 // TODO: Integrate with Gradle Witness: https://github.com/WhisperSystems/gradle-witness
+// TODO: Check if ports are already mapped before adding them instead of remove all and add
 
 /**
  * Second generation of UPnP plugin for Fred which is based on Cling.
@@ -85,7 +88,10 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     private UpnpService upnpService = new UpnpServiceImpl();
 
-    private Set<DetectedIP> detectedIPs = new HashSet<>();
+    /**
+     * Store detected External IPs for different services
+     */
+    private Map<Service, DetectedIP> detectedIPs = new HashMap<>();
 
     /**
      * Services of type WANIPConnection or WANPPPConnection
@@ -139,13 +145,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         // Send a search message to all devices and services, they should respond soon
         upnpService.getControlPoint().search();
 
-        // Let's wait 5 seconds for them to respond
-//        System.out.println("Waiting 5 seconds for the plugin to get enough devices...");
-//        try {
-//            Thread.sleep(5000);
-//        } catch (InterruptedException e) {
-//            e.printStackTrace();
-//        }
+        getUpstramMaxBitRate();
+
     }
 
     // ###################################
@@ -164,21 +165,14 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         if (detectedIPs.size() > 0) {
             // IP is found from Service event callback
-            return detectedIPs.toArray(new DetectedIP[detectedIPs.size()]);
+            return detectedIPs.values().toArray(new DetectedIP[detectedIPs.size()]);
         } else {
             // Maybe the event is not fired for some reason. We need to request the IP manually.
-            CountDownLatch latch = new CountDownLatch(1);
-            registryListener.getExternalIP(latch);
+            getExternalIP();
 
-            try {
-                latch.await(1, TimeUnit.SECONDS);
-                if (detectedIPs.size() > 0) {
-                    return detectedIPs.toArray(new DetectedIP[detectedIPs.size()]);
-                } else {
-                    return null;
-                }
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+            if (detectedIPs.size() > 0) {
+                return detectedIPs.values().toArray(new DetectedIP[detectedIPs.size()]);
+            } else {
                 return null;
             }
         }
@@ -313,12 +307,42 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public int getUpstramMaxBitRate() {
-        return 0;
+        System.out.println("Calling getUpstramMaxBitRate()");
+
+        waitForBooting();
+
+        if (connectionServices.size() < 0 && commonServices.size() < 0) {
+            return -1;
+        }
+
+        int[] rates = getRates();
+
+        System.out.println(rates);
+
+        if (rates == null) {
+            return -1;
+        }
+
+        return rates[0];
     }
 
     @Override
     public int getDownstreamMaxBitRate() {
-        return 0;
+        System.out.println("Calling getDownstreamMaxBitRate()");
+
+        waitForBooting();
+
+        if (connectionServices.size() < 0 && commonServices.size() < 0) {
+            return -1;
+        }
+
+        int[] rates = getRates();
+
+        if (rates == null) {
+            return -1;
+        }
+
+        return rates[1];
     }
 
     // ###################################
@@ -352,6 +376,175 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             booted = true;
         }
 
+    }
+
+    /**
+     * Actively request external IP addresses. This method blocks.
+     */
+    private void getExternalIP() {
+
+        final CountDownLatch latch = new CountDownLatch(1);
+
+        if (connectionServices.size() == 0) {
+            System.out.println("No internet gateway device detected. Unable to get external " +
+                    "address.");
+            latch.countDown();
+            return;
+        }
+
+        System.out.println("Try to get external IP");
+
+        for (Service connectionService : connectionServices) {
+
+            upnpService.getControlPoint().execute(
+                    new GetExternalIP(connectionService) {
+
+                        @Override
+                        protected void success(String externalIPAddress) {
+                            try {
+                                System.out.println("Get external IP: " + externalIPAddress);
+
+                                InetAddress inetAddress = InetAddress.getByName
+                                        (externalIPAddress);
+                                if (IPUtil.isValidAddress(inetAddress, false)) {
+                                    detectedIPs.put(getActionInvocation().getAction()
+                                                    .getService(),
+                                            new DetectedIP(inetAddress,
+                                                    DetectedIP.NOT_SUPPORTED));
+                                }
+
+                            } catch (UnknownHostException e) {
+                                e.printStackTrace();
+                            } finally {
+                                latch.countDown();
+                            }
+                        }
+
+                        @Override
+                        public void failure(ActionInvocation invocation,
+                                            UpnpResponse operation,
+                                            String defaultMsg) {
+                            System.out.println("Unable to get external IP. Reason: " +
+                                    defaultMsg);
+                            latch.countDown();
+                        }
+                    }
+            );
+
+        }
+
+        try {
+            latch.await(1, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private int[] getRates() {
+        final CountDownLatch latch = new CountDownLatch(connectionServices.size());
+
+        final List<Integer> upRates = new ArrayList<>();
+        final List<Integer> downRates = new ArrayList<>();
+
+        for (final Service service : connectionServices) {
+            System.out.println("Service Type: " + service.getServiceType().getType());
+            if (service.getServiceType().getType().equals("WANPPPConnection")
+                    && detectedIPs.containsKey(service) // Make sure the device isn't double natted
+                    ) {
+
+                upnpService.getControlPoint().execute(new GetLinkLayerMaxBitRates(service) {
+                    @Override
+                    protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
+                        System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
+                        System.out.println("newDownstreamMaxBitRate: " + newDownstreamMaxBitRate);
+
+                        upRates.add(newUpstreamMaxBitRate);
+                        downRates.add(newDownstreamMaxBitRate);
+
+                        latch.countDown();
+                    }
+
+                    @Override
+                    public void failure(ActionInvocation invocation, UpnpResponse operation,
+                                        String defaultMsg) {
+                        System.out.println("Unable to get MaxBitRates. Reason: " +
+                                defaultMsg);
+                        latch.countDown();
+                    }
+                });
+
+            } else {
+                latch.countDown();
+            }
+        }
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        if (upRates.size() > 0) {
+            int upRatesSum = 0;
+            for (int rate : upRates) {
+                upRatesSum += rate;
+            }
+            int downRatesSum = 0;
+            for (int rate : downRates) {
+                downRatesSum += rate;
+            }
+            return new int[]{upRatesSum, downRatesSum};
+        }
+
+        // We get nothing from GetLinkLayerMaxBitRates. Try GetCommonLinkProperties
+        final CountDownLatch latch2 = new CountDownLatch(commonServices.size());
+
+        final List<Integer> upRates2 = new ArrayList<>();
+        final List<Integer> downRates2 = new ArrayList<>();
+
+        for (final Service service : commonServices) {
+            System.out.println("Service Type: " + service.getServiceType().getType());
+
+            upnpService.getControlPoint().execute(new GetCommonLinkProperties(service) {
+                @Override
+                protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
+                    System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
+                    System.out.println("newDownstreamMaxBitRate: " + newDownstreamMaxBitRate);
+
+                    upRates2.add(newUpstreamMaxBitRate);
+                    downRates2.add(newDownstreamMaxBitRate);
+
+                    latch2.countDown();
+                }
+
+                @Override
+                public void failure(ActionInvocation invocation, UpnpResponse operation,
+                                    String defaultMsg) {
+                    System.out.println("Unable to get GetCommonLinkProperties. Reason: " +
+                            defaultMsg);
+                    latch2.countDown();
+                }
+            });
+
+        }
+        try {
+            latch2.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        if (upRates2.size() > 0) {
+            int upRatesSum = 0;
+            for (int rate : upRates2) {
+                upRatesSum += rate;
+            }
+            int downRatesSum = 0;
+            for (int rate : downRates2) {
+                downRatesSum += rate;
+            }
+            return new int[]{upRatesSum, downRatesSum};
+        }
+
+        return null;
     }
 
     /**
@@ -511,55 +704,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         }
 
-        public void getExternalIP(final CountDownLatch latch) {
-
-            if (connectionServices.size() == 0) {
-                System.out.println("No internet gateway device detected. Unable to get external " +
-                        "address.");
-                latch.countDown();
-                return;
-            }
-
-            System.out.println("Try to get external IP");
-
-            for (Service connectionService : connectionServices) {
-
-                upnpService.getControlPoint().execute(
-                        new GetExternalIP(connectionService) {
-
-                            @Override
-                            protected void success(String externalIPAddress) {
-                                try {
-                                    System.out.println("Get external IP: " + externalIPAddress);
-
-                                    InetAddress inetAddress = InetAddress.getByName
-                                            (externalIPAddress);
-                                    if (IPUtil.isValidAddress(inetAddress, false)) {
-                                        detectedIPs.add(new DetectedIP(inetAddress, DetectedIP
-                                                .NOT_SUPPORTED));
-                                    }
-
-                                } catch (UnknownHostException e) {
-                                    e.printStackTrace();
-                                } finally {
-                                    latch.countDown();
-                                }
-                            }
-
-                            @Override
-                            public void failure(ActionInvocation invocation,
-                                                UpnpResponse operation,
-                                                String defaultMsg) {
-                                System.out.println("Unable to get external IP. Reason: " +
-                                        defaultMsg);
-                                latch.countDown();
-                            }
-                        }
-                );
-            }
-
-        }
-
         protected Service discoverCommonService(Device device) {
             if (!device.getType().equals(IGD_DEVICE_TYPE)) {
                 return null;
@@ -653,12 +797,11 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                 InetAddress inetAddress = InetAddress.getByName
                         (externalIPAddress.toString());
                 if (IPUtil.isValidAddress(inetAddress, false)) {
-                    DetectedIP detectedIP = new DetectedIP(inetAddress, DetectedIP
-                            .NOT_SUPPORTED);
-                    if (!detectedIPs.contains(detectedIP)) {
+                    DetectedIP detectedIP = new DetectedIP(inetAddress, DetectedIP.NOT_SUPPORTED);
+                    if (!detectedIPs.values().contains(detectedIP)) {
                         System.out.println("New External IP found: " + externalIPAddress
                                 .toString());
-                        detectedIPs.add(detectedIP);
+                        detectedIPs.put(sub.getService(), detectedIP);
                     }
                 }
                 // If the IP address is already got, the next call to getAddress() won't
