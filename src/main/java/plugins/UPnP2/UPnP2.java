@@ -35,7 +35,6 @@ import org.fourthline.cling.model.types.UDAServiceType;
 import org.fourthline.cling.registry.Registry;
 import org.fourthline.cling.support.igd.PortMappingListener;
 import org.fourthline.cling.support.igd.callback.PortMappingAdd;
-import org.fourthline.cling.support.igd.callback.PortMappingDelete;
 import org.fourthline.cling.support.model.PortMapping;
 
 import java.net.InetAddress;
@@ -43,11 +42,9 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import freenet.pluginmanager.DetectedIP;
@@ -62,6 +59,8 @@ import freenet.pluginmanager.FredPluginRealVersioned;
 import freenet.pluginmanager.FredPluginThreadless;
 import freenet.pluginmanager.FredPluginVersioned;
 import freenet.pluginmanager.PluginRespirator;
+import freenet.support.LogThresholdCallback;
+import freenet.support.Logger;
 import freenet.support.Ticker;
 import freenet.support.transport.ip.IPUtil;
 import plugins.UPnP2.actions.GetCommonLinkProperties;
@@ -69,8 +68,6 @@ import plugins.UPnP2.actions.GetExternalIPSync;
 import plugins.UPnP2.actions.GetLinkLayerMaxBitRates;
 import plugins.UPnP2.actions.GetSpecificPortMappingEntry;
 
-// TODO: Use Fred's Ticker to replace ScheduledThreadPool
-// TODO: Use Fred's Logger instead of System.out.println()
 // TODO: Integrate with Gradle Witness: https://github.com/WhisperSystems/gradle-witness
 
 /**
@@ -82,31 +79,35 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         FredPluginPortForward, FredPluginVersioned, FredPluginRealVersioned,
         FredPluginBandwidthIndicator {
 
+    private static volatile boolean logMINOR;
+
+    static {
+        Logger.registerLogThresholdCallback(new LogThresholdCallback() {
+            @Override
+            public void shouldUpdate() {
+                logMINOR = Logger.shouldLog(Logger.LogLevel.MINOR, this);
+            }
+        });
+    }
+
     private PluginRespirator pr;
-
     private UpnpService upnpService = new UpnpServiceImpl();
-
     /**
      * Store detected External IPs for different services
      */
     private Map<Device, DetectedIP> detectedIPs = new HashMap<>();
-
     /**
      * Services of type WANIPConnection or WANPPPConnection
      */
     private Set<Service> connectionServices = new HashSet<>();
-
     /**
      * Services of type WANCommonInterfaceConfig
      */
     private Set<Service> commonServices = new HashSet<>();
-
     private Map<Service, SubscriptionCallback> subscriptionCallbacks = new HashMap<>();
     private IGDRegistryListener registryListener;
-
     private boolean booted = false;
     private Ticker ticker;
-
     private Set<ForwardPort> ports;
     private ForwardPortCallback cb;
     private Runnable portMappingRunnable = new Runnable() {
@@ -116,30 +117,31 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         }
     };
 
+
     // ###################################
     // FredPlugin method(s)
     // ###################################
 
     @Override
     public void terminate() {
-        System.out.println("UPnP2 plugin ended");
-
         ticker.removeQueuedJob(portMappingRunnable);
 
         // Release all resources and advertise BYEBYE to other UPnP devices
         upnpService.shutdown();
+
+        Logger.normal(this, "UPnP2 plugin ended");
     }
 
     @Override
     public void runPlugin(PluginRespirator pr) {
+        Logger.normal(this, "UPnP2 plugin started");
+
         this.pr = pr;
 
         ticker = pr.getNode().getTicker();
 
-        System.out.println("UPnP2 plugin started");
-
         // This will create necessary network resources for UPnP right away
-        System.out.println("Starting Cling...");
+        Logger.normal(this, "Starting Cling...");
 
         // Add listeners for upnpService
         registryListener = new IGDRegistryListener();
@@ -156,7 +158,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public DetectedIP[] getAddress() {
-        System.out.println("Calling getAddress()");
+        Logger.normal(this, "Calling getAddress()");
 
         waitForBooting();
 
@@ -186,7 +188,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public void onChangePublicPorts(Set<ForwardPort> ports, ForwardPortCallback cb) {
-        System.out.println("Calling onChangePublicPorts()");
+        Logger.normal(this, "Calling onChangePublicPorts()");
 
         waitForBooting();
 
@@ -220,9 +222,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                             protocolName = "UDP";
                     }
 
-                    System.out.printf("Mapping port: %s %d (%s)%n", protocolName, port
-                                    .portNumber,
-                            port.name);
+                    Logger.normal(this, String.format("Mapping port: %s %d (%s)%n", protocolName,
+                            port.portNumber, port.name));
 
                     // Each service has its own local IP
                     String localIP = ((RemoteDevice) connectionService.getDevice())
@@ -230,9 +231,10 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                             .getDiscoveredOnLocalAddress().getHostAddress();
 
 
-                    System.out.println("For device: " + connectionService.getDevice());
-                    System.out.println("For service: " + connectionService);
-                    System.out.println("For local IP: " + localIP);
+                    if (logMINOR)
+                        Logger.minor(this, "For device: " + connectionService.getDevice());
+                    if (logMINOR) Logger.minor(this, "For service: " + connectionService);
+                    if (logMINOR) Logger.minor(this, "For local IP: " + localIP);
 
                     PortMapping portMapping = new PortMapping(
                             port.portNumber,
@@ -258,7 +260,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
             }
         } else {
-            System.out.println("Unable to get localIPs.");
+            Logger.warning(this, "Unable to get localIPs.");
         }
 
         long now = System.currentTimeMillis();
@@ -371,12 +373,12 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     private void getExternalIP() {
 
         if (connectionServices.size() == 0) {
-            System.out.println("No internet gateway device detected. Unable to get external " +
+            Logger.warning(this, "No internet gateway device detected. Unable to get external " +
                     "address.");
             return;
         }
 
-        System.out.println("Try to get external IP");
+        Logger.normal(this, "Try to get external IP");
 
         for (Service connectionService : connectionServices) {
 
@@ -405,7 +407,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                 public void failure(ActionInvocation invocation,
                                     UpnpResponse operation,
                                     String defaultMsg) {
-                    System.out.println("Unable to get external IP. Reason: " +
+                    Logger.warning(this, "Unable to get external IP. Reason: " +
                             defaultMsg);
                 }
             }.run(); // Synchronous!
@@ -419,7 +421,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         final List<Integer> downRates = new ArrayList<>();
 
         for (final Service service : connectionServices) {
-            System.out.println("Service Type: " + service.getServiceType().getType());
+            if (logMINOR) Logger.minor(this, "Service Type: " + service.getServiceType().getType());
             if (service.getServiceType().getType().equals("WANPPPConnection")
                     // Make sure the device isn't double natted
                     // Double natted devices won't have a valid external IP
@@ -429,8 +431,11 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                 new GetLinkLayerMaxBitRates(service, upnpService.getControlPoint()) {
                     @Override
                     protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
-                        System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
-                        System.out.println("newDownstreamMaxBitRate: " + newDownstreamMaxBitRate);
+                        if (logMINOR)
+                            Logger.minor(this, "newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
+                        if (logMINOR)
+                            Logger.minor(this, "newDownstreamMaxBitRate: " +
+                                    newDownstreamMaxBitRate);
 
                         upRates.add(newUpstreamMaxBitRate);
                         downRates.add(newDownstreamMaxBitRate);
@@ -439,7 +444,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                     @Override
                     public void failure(ActionInvocation invocation, UpnpResponse operation,
                                         String defaultMsg) {
-                        System.out.println("Unable to get MaxBitRates. Reason: " +
+                        Logger.warning(this, "Unable to get MaxBitRates. Reason: " +
                                 defaultMsg);
                     }
                 }.run(); // Synchronous!
@@ -465,7 +470,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         final List<Integer> downRates2 = new ArrayList<>();
 
         for (final Service service : commonServices) {
-            System.out.println("Service Type: " + service.getServiceType().getType());
+            if (logMINOR) Logger.minor(this, "Service Type: " + service.getServiceType().getType());
 
             // Make sure the device isn't double natted
             // Double natted devices won't have a valid external IP
@@ -473,8 +478,11 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                 new GetCommonLinkProperties(service, upnpService.getControlPoint()) {
                     @Override
                     protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
-                        System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
-                        System.out.println("newDownstreamMaxBitRate: " + newDownstreamMaxBitRate);
+                        if (logMINOR)
+                            Logger.minor(this, "newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
+                        if (logMINOR)
+                            Logger.minor(this, "newDownstreamMaxBitRate: " +
+                                    newDownstreamMaxBitRate);
 
                         upRates2.add(newUpstreamMaxBitRate);
                         downRates2.add(newDownstreamMaxBitRate);
@@ -483,7 +491,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                     @Override
                     public void failure(ActionInvocation invocation, UpnpResponse operation,
                                         String defaultMsg) {
-                        System.out.println("Unable to get GetCommonLinkProperties. Reason: " +
+                        Logger.warning(this, "Unable to get GetCommonLinkProperties. Reason: " +
                                 defaultMsg);
                     }
                 }.run(); // Synchronous!
@@ -517,7 +525,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         @Override
         synchronized public void deviceAdded(Registry registry, Device device) {
 
-            System.out.println("Remote device available: " + device.getDisplayString());
+            Logger.normal(this, "Remote device available: " + device.getDisplayString());
 
             Service commonService;
             if ((commonService = discoverCommonService(device)) == null) return;
@@ -539,7 +547,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         @Override
         synchronized public void deviceRemoved(Registry registry, Device device) {
 
-            System.out.println("Remote device unavailable: " + device.getDisplayString());
+            Logger.normal(this, "Remote device unavailable: " + device.getDisplayString());
 
             super.deviceRemoved(registry, device);
 
@@ -568,72 +576,31 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         }
 
-        synchronized public void removeAllPortMappings() {
-
-            final CountDownLatch latch = new CountDownLatch(activePortMappings.size());
-
-            // Unmap old ports
-            for (Map.Entry<Service, List<PortMapping>> activeEntry : activePortMappings.entrySet
-                    ()) {
-
-                final Iterator<PortMapping> it = activeEntry.getValue().iterator();
-                while (it.hasNext()) {
-                    final PortMapping pm = it.next();
-                    System.out.println("Trying to delete port mapping on IGD: " + pm);
-                    new PortMappingDelete(activeEntry.getKey(), upnpService.getControlPoint(), pm) {
-
-                        @Override
-                        public void success(ActionInvocation invocation) {
-                            System.out.println("Port mapping deleted: " + pm);
-                            it.remove();
-                            latch.countDown();
-                        }
-
-                        @Override
-                        public void failure(ActionInvocation invocation, UpnpResponse operation,
-                                            String defaultMsg) {
-                            handleFailureMessage("Failed to delete port mapping: " + pm);
-                            handleFailureMessage("Reason: " + defaultMsg);
-                            latch.countDown();
-                        }
-
-                    }.run(); // Synchronous!
-                }
-            }
-
-            try {
-                latch.await();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            activePortMappings = new HashMap<>();
-        }
-
         synchronized public void addPortMappings(final Service connectionService, Set<PortMapping>
                 newPortMappings, final Map<PortMapping, ForwardPort> forwardPortMap, final
                                                  ForwardPortCallback cb) {
 
             if (connectionService == null || newPortMappings.size() == 0) return;
 
-            System.out.println("Activating port mappings on: " + connectionService);
+            Logger.normal(this, "Activating port mappings on: " + connectionService);
 
             final List<PortMapping> activeForService = new ArrayList<>();
             for (final PortMapping pm : newPortMappings) {
 
-                System.out.println("Checking if the Port is already Mapped: " + pm);
+                Logger.normal(this, "Checking if the Port is already Mapped: " + pm);
 
                 new GetSpecificPortMappingEntry(connectionService, upnpService.getControlPoint(),
                         pm) {
                     @Override
                     public void success(ActionInvocation invocation) {
-                        System.out.println("Port is already Mapped: " + pm);
+                        Logger.normal(this, "Port is already Mapped: " + pm);
                     }
 
                     @Override
                     public void failure(ActionInvocation invocation, UpnpResponse operation,
                                         String defaultMsg) {
-                        System.out.println("Port is not Mapped: " + pm);
-                        System.out.println("Adding Port Mapping: " + pm);
+                        Logger.normal(this, "Port is not Mapped: " + pm);
+                        Logger.normal(this, "Adding Port Mapping: " + pm);
 
                         final ForwardPort forwardPort = forwardPortMap.get(pm);
 
@@ -641,7 +608,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
                             @Override
                             public void success(ActionInvocation invocation) {
-                                System.out.println("Port mapping added: " + pm);
+                                Logger.normal(this, "Port mapping added: " + pm);
                                 activeForService.add(pm);
 
                                 // Notify Fred the port mapping is successful
@@ -658,8 +625,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                             @Override
                             public void failure(ActionInvocation invocation, UpnpResponse operation,
                                                 String defaultMsg) {
-                                handleFailureMessage("Failed to add port mapping: " + pm);
-                                handleFailureMessage("Reason: " + defaultMsg);
+                                Logger.warning(this, "Failed to add port mapping: " + pm);
+                                Logger.warning(this, "Reason: " + defaultMsg);
 
                                 // Notify Fred the port mapping is failed
                                 ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
@@ -688,12 +655,12 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             UDADeviceType wanDeviceType = new UDADeviceType("WANDevice");
             Device[] wanDevices = device.findDevices(wanDeviceType);
             if (wanDevices.length == 0) {
-                System.out.println("IGD doesn't support '" + wanDeviceType + "': " + device);
+                Logger.normal(this, "IGD doesn't support '" + wanDeviceType + "': " + device);
                 return null;
             }
 
             Device wanDevice = wanDevices[0];
-            System.out.println("Using first discovered WAN device: " + wanDevice);
+            Logger.normal(this, "Using first discovered WAN device: " + wanDevice);
 
             return wanDevice.findService(new UDAServiceType("WANCommonInterfaceConfig"));
         }
@@ -711,7 +678,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         @Override
         public void established(GENASubscription sub) {
-            System.out.println("Established: " + sub.getSubscriptionId());
+            Logger.normal(this, "GENA Established: " + sub.getSubscriptionId());
         }
 
         @Override
@@ -719,15 +686,15 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                               UpnpResponse responseStatus,
                               Exception exception,
                               String defaultMsg) {
-            System.err.println("Failed: " + defaultMsg);
+            Logger.warning(this, "GENA Failed: " + defaultMsg);
         }
 
         @Override
         public void ended(GENASubscription sub,
                           CancelReason reason,
                           UpnpResponse response) {
-            System.err.println("Ended: " + reason);
-            System.err.println("Response: " + response);
+            Logger.normal(this, "GENA Ended: " + reason);
+            if (logMINOR) Logger.minor(this, "GENA Response: " + response);
             if (reason == CancelReason.RENEWAL_FAILED) {
                 renewalFailedCount++;
 
@@ -735,7 +702,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                     // Some routers doesn't response correct header and Cling won't be able
                     // to renew it. Then we need to remove and re-subscribe.
 
-                    System.err.println("Renewal failed. Try to re-subscribe.");
+                    Logger.warning(this, "Renewal failed. Try to re-subscribe.");
 
                     // Remove current subscription from registry
                     upnpService.getRegistry().removeRemoteSubscription((RemoteGENASubscription)
@@ -756,8 +723,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
             System.out.println(values);
 
-            StateVariableValue externalIPAddress = (StateVariableValue) values.get
-                    ("ExternalIPAddress");
+            StateVariableValue externalIPAddress =
+                    (StateVariableValue) values.get("ExternalIPAddress");
 
             try {
                 InetAddress inetAddress = InetAddress.getByName
@@ -765,10 +732,10 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                 if (IPUtil.isValidAddress(inetAddress, false)) {
                     DetectedIP detectedIP = new DetectedIP(inetAddress, DetectedIP.NOT_SUPPORTED);
                     if (!detectedIPs.values().contains(detectedIP)) {
-                        System.out.println("New External IP found: " + externalIPAddress
+                        Logger.normal(this, "New External IP found: " + externalIPAddress
                                 .toString());
-                        System.out.println("For device: " + sub.getService().getDevice().getRoot
-                                ().getDisplayString());
+                        Logger.normal(this, "For device: " +
+                                sub.getService().getDevice().getRoot().getDisplayString());
                         detectedIPs.put(sub.getService().getDevice().getRoot(), detectedIP);
                     }
                 }
@@ -782,7 +749,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         @Override
         public void eventsMissed(GENASubscription sub, int numberOfMissedEvents) {
-            System.out.println("Missed events: " + numberOfMissedEvents);
+            Logger.warning(this, "Missed events: " + numberOfMissedEvents);
         }
 
         @Override
