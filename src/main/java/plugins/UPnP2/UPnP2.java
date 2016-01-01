@@ -144,8 +144,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         // Send a search message to all devices and services, they should respond soon
         upnpService.getControlPoint().search();
 
-        getUpstramMaxBitRate();
-        getExternalIP();
     }
 
     // ###################################
