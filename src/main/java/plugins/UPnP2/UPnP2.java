@@ -68,8 +68,6 @@ import plugins.UPnP2.actions.GetExternalIPSync;
 import plugins.UPnP2.actions.GetLinkLayerMaxBitRates;
 import plugins.UPnP2.actions.GetSpecificPortMappingEntry;
 
-// TODO: Integrate with Gradle Witness: https://github.com/WhisperSystems/gradle-witness
-
 /**
  * Second generation of UPnP plugin for Fred which is based on Cling.
  *

@@ -1,9 +1,17 @@
+buildscript {
+    dependencies {
+        classpath files('libs/gradle-witness.jar')
+    }
+}
+
 plugins {
     id 'java'
     id 'idea'
     id 'com.github.johnrengelman.shadow' version '1.2.2'
     id 'maven'
 }
+
+apply plugin: 'witness'
 
 group 'plugins'
 version '1.0-SNAPSHOT'
@@ -48,6 +56,17 @@ dependencies {
     provided name: 'freenet-ext'
     provided name: 'bcprov-jdk15on-152'
     testCompile group: 'junit', name: 'junit', version: '4.11'
+}
+
+dependencyVerification {
+    verify = [
+            'org.fourthline.cling:cling-core:cf556bae1a8526626b139e1a3815a8c960c4c55bf1d24baae143ff8079f326fd',
+            'org.fourthline.cling:cling-support:d090bff05f033f2d0d1da42ba9f367d1155b54af3b44237baddd0faeef5f6a1b',
+            'org.seamless:seamless-util:eb663e3739d67137baab18e65ed2cdec28213a8871458323c3cc62da085cec3c',
+            'org.seamless:seamless-http:05da30fa260cf53770fefbd46482c04f6a37e19b663fec282a4c4384c0def813',
+            'org.seamless:seamless-xml:6d80a97918e4ae91ecb676f9cd056942f1565d981d054a461058a16096464298',
+            'org.seamless:seamless-swing:653fa6fea357f1349075bdd94328fc9c0d285046d7deb25a56dc8a86513b64e0',
+    ]
 }
 
 tasks.withType(AbstractCompile) {
