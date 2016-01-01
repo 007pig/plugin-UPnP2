@@ -1,15 +1,20 @@
 package plugins.UPnP2.actions;
 
 import org.fourthline.cling.controlpoint.ActionCallback;
+import org.fourthline.cling.controlpoint.ControlPoint;
 import org.fourthline.cling.model.action.ActionInvocation;
 import org.fourthline.cling.model.meta.Service;
 import org.fourthline.cling.model.types.UnsignedVariableInteger;
 
 public abstract class GetLinkLayerMaxBitRates extends ActionCallback {
 
-    @SuppressWarnings("unchecked")
     public GetLinkLayerMaxBitRates(Service service) {
-        super(new ActionInvocation(service.getAction("GetLinkLayerMaxBitRates")));
+        this(service, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public GetLinkLayerMaxBitRates(Service service, ControlPoint controlPoint) {
+        super(new ActionInvocation(service.getAction("GetLinkLayerMaxBitRates")), controlPoint);
     }
 
     @Override

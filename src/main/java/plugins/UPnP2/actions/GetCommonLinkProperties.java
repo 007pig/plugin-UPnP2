@@ -1,15 +1,20 @@
 package plugins.UPnP2.actions;
 
 import org.fourthline.cling.controlpoint.ActionCallback;
+import org.fourthline.cling.controlpoint.ControlPoint;
 import org.fourthline.cling.model.action.ActionInvocation;
 import org.fourthline.cling.model.meta.Service;
 import org.fourthline.cling.model.types.UnsignedVariableInteger;
 
 public abstract class GetCommonLinkProperties extends ActionCallback {
 
-    @SuppressWarnings("unchecked")
     public GetCommonLinkProperties(Service service) {
-        super(new ActionInvocation(service.getAction("GetCommonLinkProperties")));
+        this(service, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public GetCommonLinkProperties(Service service, ControlPoint controlPoint) {
+        super(new ActionInvocation(service.getAction("GetCommonLinkProperties")), controlPoint);
     }
 
     @Override

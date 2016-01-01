@@ -34,7 +34,6 @@ import org.fourthline.cling.model.types.UDADeviceType;
 import org.fourthline.cling.model.types.UDAServiceType;
 import org.fourthline.cling.registry.Registry;
 import org.fourthline.cling.support.igd.PortMappingListener;
-import org.fourthline.cling.support.igd.callback.GetExternalIP;
 import org.fourthline.cling.support.igd.callback.PortMappingAdd;
 import org.fourthline.cling.support.igd.callback.PortMappingDelete;
 import org.fourthline.cling.support.model.PortMapping;
@@ -67,11 +66,13 @@ import freenet.pluginmanager.FredPluginVersioned;
 import freenet.pluginmanager.PluginRespirator;
 import freenet.support.transport.ip.IPUtil;
 import plugins.UPnP2.actions.GetCommonLinkProperties;
+import plugins.UPnP2.actions.GetExternalIPSync;
 import plugins.UPnP2.actions.GetLinkLayerMaxBitRates;
+import plugins.UPnP2.actions.GetSpecificPortMappingEntry;
 
+// TODO: Use Fred's Ticker to replace ScheduledThreadPool
 // TODO: Use Fred's Logger instead of System.out.println()
 // TODO: Integrate with Gradle Witness: https://github.com/WhisperSystems/gradle-witness
-// TODO: Check if ports are already mapped before adding them instead of remove all and add
 
 /**
  * Second generation of UPnP plugin for Fred which is based on Cling.
@@ -143,6 +144,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         // Send a search message to all devices and services, they should respond soon
         upnpService.getControlPoint().search();
 
+        getUpstramMaxBitRate();
+        getExternalIP();
     }
 
     // ###################################
@@ -202,16 +205,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             @Override
             public void run() {
                 if (connectionServices.size() > 0) {
-                    // Remove all old port mappings
-                    System.out.println("Removing old port mappings...");
-                    registryListener.removeAllPortMappings();
-
-                    // Sleep a second waiting for the old mappings to be removed
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
 
                     Set<PortMapping> portMappings = new HashSet<>();
                     Map<PortMapping, ForwardPort> forwardPortMap = new HashMap<>();
@@ -285,7 +278,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public long getRealVersion() {
-        return 4;
+        return 5;
     }
 
     // ###################################
@@ -382,12 +375,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
      */
     private void getExternalIP() {
 
-        final CountDownLatch latch = new CountDownLatch(1);
-
         if (connectionServices.size() == 0) {
             System.out.println("No internet gateway device detected. Unable to get external " +
                     "address.");
-            latch.countDown();
             return;
         }
 
@@ -395,52 +385,40 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
         for (Service connectionService : connectionServices) {
 
-            upnpService.getControlPoint().execute(
-                    new GetExternalIP(connectionService) {
+            new GetExternalIPSync(connectionService, upnpService.getControlPoint()) {
 
-                        @Override
-                        protected void success(String externalIPAddress) {
-                            try {
-                                System.out.println("Get external IP: " + externalIPAddress);
+                @Override
+                protected void success(String externalIPAddress) {
+                    try {
+                        System.out.println("Get external IP: " + externalIPAddress);
 
-                                InetAddress inetAddress = InetAddress.getByName
-                                        (externalIPAddress);
-                                if (IPUtil.isValidAddress(inetAddress, false)) {
-                                    detectedIPs.put(getActionInvocation().getAction()
-                                                    .getService().getDevice().getRoot(),
-                                            new DetectedIP(inetAddress,
-                                                    DetectedIP.NOT_SUPPORTED));
-                                }
-
-                            } catch (UnknownHostException e) {
-                                e.printStackTrace();
-                            } finally {
-                                latch.countDown();
-                            }
+                        InetAddress inetAddress = InetAddress.getByName
+                                (externalIPAddress);
+                        if (IPUtil.isValidAddress(inetAddress, false)) {
+                            detectedIPs.put(getActionInvocation().getAction()
+                                            .getService().getDevice().getRoot(),
+                                    new DetectedIP(inetAddress,
+                                            DetectedIP.NOT_SUPPORTED));
                         }
 
-                        @Override
-                        public void failure(ActionInvocation invocation,
-                                            UpnpResponse operation,
-                                            String defaultMsg) {
-                            System.out.println("Unable to get external IP. Reason: " +
-                                    defaultMsg);
-                            latch.countDown();
-                        }
+                    } catch (UnknownHostException e) {
+                        e.printStackTrace();
                     }
-            );
+                }
 
-        }
+                @Override
+                public void failure(ActionInvocation invocation,
+                                    UpnpResponse operation,
+                                    String defaultMsg) {
+                    System.out.println("Unable to get external IP. Reason: " +
+                            defaultMsg);
+                }
+            }.run(); // Synchronous!
 
-        try {
-            latch.await(1, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
         }
     }
 
     private int[] getRates() {
-        final CountDownLatch latch = new CountDownLatch(connectionServices.size());
 
         final List<Integer> upRates = new ArrayList<>();
         final List<Integer> downRates = new ArrayList<>();
@@ -453,7 +431,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                     && detectedIPs.containsKey(service.getDevice().getRoot())
                     ) {
 
-                upnpService.getControlPoint().execute(new GetLinkLayerMaxBitRates(service) {
+                new GetLinkLayerMaxBitRates(service, upnpService.getControlPoint()) {
                     @Override
                     protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
                         System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
@@ -461,8 +439,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
                         upRates.add(newUpstreamMaxBitRate);
                         downRates.add(newDownstreamMaxBitRate);
-
-                        latch.countDown();
                     }
 
                     @Override
@@ -470,18 +446,10 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                                         String defaultMsg) {
                         System.out.println("Unable to get MaxBitRates. Reason: " +
                                 defaultMsg);
-                        latch.countDown();
                     }
-                });
+                }.run(); // Synchronous!
 
-            } else {
-                latch.countDown();
             }
-        }
-        try {
-            latch.await(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
         }
 
         if (upRates.size() > 0) {
@@ -497,7 +465,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         }
 
         // We get nothing from GetLinkLayerMaxBitRates. Try GetCommonLinkProperties
-        final CountDownLatch latch2 = new CountDownLatch(commonServices.size());
 
         final List<Integer> upRates2 = new ArrayList<>();
         final List<Integer> downRates2 = new ArrayList<>();
@@ -508,7 +475,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             // Make sure the device isn't double natted
             // Double natted devices won't have a valid external IP
             if (detectedIPs.containsKey(service.getDevice().getRoot())) {
-                upnpService.getControlPoint().execute(new GetCommonLinkProperties(service) {
+                new GetCommonLinkProperties(service, upnpService.getControlPoint()) {
                     @Override
                     protected void success(int newUpstreamMaxBitRate, int newDownstreamMaxBitRate) {
                         System.out.println("newUpstreamMaxBitRate: " + newUpstreamMaxBitRate);
@@ -516,8 +483,6 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
                         upRates2.add(newUpstreamMaxBitRate);
                         downRates2.add(newDownstreamMaxBitRate);
-
-                        latch2.countDown();
                     }
 
                     @Override
@@ -525,18 +490,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
                                         String defaultMsg) {
                         System.out.println("Unable to get GetCommonLinkProperties. Reason: " +
                                 defaultMsg);
-                        latch2.countDown();
                     }
-                });
-            } else {
-                latch2.countDown();
+                }.run(); // Synchronous!
             }
-
-        }
-        try {
-            latch2.await(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
         }
 
         if (upRates2.size() > 0) {
@@ -658,7 +614,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
             activePortMappings = new HashMap<>();
         }
 
-        synchronized public void addPortMappings(Service connectionService, Set<PortMapping>
+        synchronized public void addPortMappings(final Service connectionService, Set<PortMapping>
                 newPortMappings, final Map<PortMapping, ForwardPort> forwardPortMap, final
                                                  ForwardPortCallback cb) {
 
@@ -668,46 +624,62 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
             final List<PortMapping> activeForService = new ArrayList<>();
             for (final PortMapping pm : newPortMappings) {
-                System.out.println("Adding Port Mapping: " + pm);
 
-                final ForwardPort forwardPort = forwardPortMap.get(pm);
+                System.out.println("Checking if the Port is already Mapped: " + pm);
 
-                new PortMappingAdd(connectionService, upnpService.getControlPoint(), pm) {
-
+                new GetSpecificPortMappingEntry(connectionService, upnpService.getControlPoint(),
+                        pm) {
                     @Override
                     public void success(ActionInvocation invocation) {
-                        System.out.println("Port mapping added: " + pm);
-                        activeForService.add(pm);
-
-                        // Notify Fred the port mapping is successful
-                        ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
-                                .MAYBE_SUCCESS, "", pm.getExternalPort().getValue().intValue());
-
-                        Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
-                        statuses.put(forwardPort, status);
-
-                        cb.portForwardStatus(statuses);
+                        System.out.println("Port is already Mapped: " + pm);
                     }
 
                     @Override
-                    public void failure(ActionInvocation invocation, UpnpResponse operation,
-                                        String defaultMsg) {
-                        handleFailureMessage("Failed to add port mapping: " + pm);
-                        handleFailureMessage("Reason: " + defaultMsg);
+                    public void failure(ActionInvocation invocation, UpnpResponse operation, String defaultMsg) {
+                        System.out.println("Port is not Mapped: " + pm);
+                        System.out.println("Adding Port Mapping: " + pm);
 
-                        // Notify Fred the port mapping is failed
-                        ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
-                                .DEFINITE_FAILURE, defaultMsg, forwardPort.portNumber);
+                        final ForwardPort forwardPort = forwardPortMap.get(pm);
 
-                        Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
-                        statuses.put(forwardPort, status);
+                        new PortMappingAdd(connectionService, upnpService.getControlPoint(), pm) {
 
-                        cb.portForwardStatus(statuses);
+                            @Override
+                            public void success(ActionInvocation invocation) {
+                                System.out.println("Port mapping added: " + pm);
+                                activeForService.add(pm);
+
+                                // Notify Fred the port mapping is successful
+                                ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
+                                        .MAYBE_SUCCESS, "", pm.getExternalPort().getValue().intValue());
+
+                                Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
+                                statuses.put(forwardPort, status);
+
+                                cb.portForwardStatus(statuses);
+                            }
+
+                            @Override
+                            public void failure(ActionInvocation invocation, UpnpResponse operation,
+                                                String defaultMsg) {
+                                handleFailureMessage("Failed to add port mapping: " + pm);
+                                handleFailureMessage("Reason: " + defaultMsg);
+
+                                // Notify Fred the port mapping is failed
+                                ForwardPortStatus status = new ForwardPortStatus(ForwardPortStatus
+                                        .DEFINITE_FAILURE, defaultMsg, forwardPort.portNumber);
+
+                                Map<ForwardPort, ForwardPortStatus> statuses = new HashMap<>();
+                                statuses.put(forwardPort, status);
+
+                                cb.portForwardStatus(statuses);
+                            }
+                        }.run(); // Synchronous!
                     }
                 }.run(); // Synchronous!
-            }
 
-            activePortMappings.put(connectionService, activeForService);
+                activePortMappings.put(connectionService, activeForService);
+
+            }
 
         }
 
