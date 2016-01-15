@@ -273,7 +273,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public long getRealVersion() {
-        return 5;
+        return 6;
     }
 
     // ###################################
@@ -282,7 +282,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public String getVersion() {
-        return "1.0.0";
+        return "1.1.0";
     }
 
     // ###################################
