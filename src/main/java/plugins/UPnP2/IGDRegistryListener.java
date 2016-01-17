@@ -100,6 +100,7 @@ public class IGDRegistryListener extends PortMappingListener {
             }
             // Remove Services
             serviceManager.removeConnectionService(service);
+            serviceManager.removeCommonService(service);
         }
 
         // Clear detected IPs

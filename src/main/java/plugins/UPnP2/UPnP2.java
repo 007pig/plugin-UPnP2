@@ -34,6 +34,12 @@ import freenet.pluginmanager.PluginRespirator;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 
+/*
+ *  TODO: Separate fred related code (ticker) from service manager
+ *  TODO: New return object for getRates()
+ *
+ */
+
 /**
  * Second generation of UPnP plugin for Fred which is based on Cling.
  *
