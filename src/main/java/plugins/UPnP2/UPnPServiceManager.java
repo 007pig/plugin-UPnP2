@@ -51,8 +51,6 @@ class UPnPServiceManager {
         });
     }
 
-    private static volatile UPnPServiceManager instance = null;
-
     /**
      * Cling Core UPnP stack
      */
@@ -87,24 +85,6 @@ class UPnPServiceManager {
     private Ticker ticker;
 
     /**
-     * Private Ctor
-     */
-    private UPnPServiceManager() {
-
-    }
-
-    public static UPnPServiceManager getInstance() {
-        if (instance == null) {
-            synchronized (UPnPServiceManager.class) {
-                if (instance == null) {
-                    instance = new UPnPServiceManager();
-                }
-            }
-        }
-        return instance;
-    }
-
-    /**
      * Initialize service manager
      */
     public void init(Ticker ticker) {
@@ -114,7 +94,7 @@ class UPnPServiceManager {
         Logger.normal(this, "Starting Cling...");
 
         // Add listeners for upnpService
-        registryListener = new IGDRegistryListener(upnpService);
+        registryListener = new IGDRegistryListener(this);
         upnpService.getRegistry().addListener(registryListener);
 
         // Send a search message to all devices and services, they should respond soon

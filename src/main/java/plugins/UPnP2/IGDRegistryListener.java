@@ -43,19 +43,20 @@ public class IGDRegistryListener extends PortMappingListener {
         });
     }
 
+    private UPnPServiceManager serviceManager;
     private UpnpService upnpService;
 
-    public IGDRegistryListener(UpnpService upnpService) {
+    public IGDRegistryListener(UPnPServiceManager serviceManager) {
         super(new PortMapping[0]);
-        this.upnpService = upnpService;
+
+        this.serviceManager = serviceManager;
+        upnpService = serviceManager.getUpnpService();
     }
 
     @Override
     synchronized public void deviceAdded(Registry registry, Device device) {
 
         Logger.normal(this, "Remote device available: " + device.getDisplayString());
-
-        UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
 
         Service commonService;
         if ((commonService = discoverCommonService(device)) == null) return;
@@ -68,7 +69,7 @@ public class IGDRegistryListener extends PortMappingListener {
         serviceManager.addConnectionService(connectionService);
 
         // Add service events listener
-        SubscriptionCallback callback = new IGDSubscriptionCallback(connectionService);
+        SubscriptionCallback callback = new IGDSubscriptionCallback(connectionService, serviceManager);
         upnpService.getControlPoint().execute(callback);
         serviceManager.addSubscriptionCallback(connectionService, callback);
 
@@ -80,8 +81,6 @@ public class IGDRegistryListener extends PortMappingListener {
         Logger.normal(this, "Remote device unavailable: " + device.getDisplayString());
 
         super.deviceRemoved(registry, device);
-
-        UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
 
         for (Service service : device.findServices()) {
             // End the subscription

@@ -35,11 +35,12 @@ class IGDSubscriptionCallback extends SubscriptionCallback {
         });
     }
 
-
+    private UPnPServiceManager serviceManager;
     private int renewalFailedCount = 0;
 
-    public IGDSubscriptionCallback(Service connectionService) {
+    public IGDSubscriptionCallback(Service connectionService, UPnPServiceManager serviceManager) {
         super(connectionService, 600);
+        this.serviceManager = serviceManager;
     }
 
     @Override
@@ -70,14 +71,13 @@ class IGDSubscriptionCallback extends SubscriptionCallback {
 
                 Logger.warning(this, "Renewal failed. Try to re-subscribe.");
 
-                UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
                 UpnpService upnpService = serviceManager.getUpnpService();
 
                 // Remove current subscription from registry
                 upnpService.getRegistry().removeRemoteSubscription((RemoteGENASubscription)
                         sub);
 
-                SubscriptionCallback callback = new IGDSubscriptionCallback(service);
+                SubscriptionCallback callback = new IGDSubscriptionCallback(service, serviceManager);
                 upnpService.getControlPoint().execute(callback);
                 serviceManager.addSubscriptionCallback(service, callback);
             }
@@ -96,8 +96,6 @@ class IGDSubscriptionCallback extends SubscriptionCallback {
                 (StateVariableValue) values.get("ExternalIPAddress");
 
         try {
-            UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
-
             InetAddress inetAddress = InetAddress.getByName
                     (externalIPAddress.toString());
             if (IPUtil.isValidAddress(inetAddress, false)) {

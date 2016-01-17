@@ -54,7 +54,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         });
     }
 
-    private UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
+    private UPnPServiceManager serviceManager;
 
 
     // ###################################
@@ -72,6 +72,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     public void runPlugin(PluginRespirator pr) {
         Logger.normal(this, "UPnP2 plugin started");
 
+        serviceManager = new UPnPServiceManager();
         serviceManager.init(pr.getNode().getTicker());
     }
 
