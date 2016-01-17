@@ -1,5 +1,6 @@
 package plugins.UPnP2;
 
+import org.fourthline.cling.UpnpService;
 import org.fourthline.cling.controlpoint.SubscriptionCallback;
 import org.fourthline.cling.model.UnsupportedDataException;
 import org.fourthline.cling.model.gena.CancelReason;
@@ -69,13 +70,16 @@ class IDGSubscriptionCallback extends SubscriptionCallback {
 
                 Logger.warning(this, "Renewal failed. Try to re-subscribe.");
 
+                UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
+                UpnpService upnpService = serviceManager.getUpnpService();
+
                 // Remove current subscription from registry
                 upnpService.getRegistry().removeRemoteSubscription((RemoteGENASubscription)
                         sub);
 
                 SubscriptionCallback callback = new IDGSubscriptionCallback(service);
                 upnpService.getControlPoint().execute(callback);
-                subscriptionCallbacks.put(service, callback);
+                serviceManager.addSubscriptionCallback(service, callback);
             }
 
         }
@@ -92,21 +96,23 @@ class IDGSubscriptionCallback extends SubscriptionCallback {
                 (StateVariableValue) values.get("ExternalIPAddress");
 
         try {
+            UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
+
             InetAddress inetAddress = InetAddress.getByName
                     (externalIPAddress.toString());
             if (IPUtil.isValidAddress(inetAddress, false)) {
                 DetectedIP detectedIP = new DetectedIP(inetAddress, DetectedIP.NOT_SUPPORTED);
-                if (!detectedIPs.values().contains(detectedIP)) {
+                if (!serviceManager.getDetectedIPs().values().contains(detectedIP)) {
                     Logger.normal(this, "New External IP found: " + externalIPAddress
                             .toString());
                     Logger.normal(this, "For device: " +
                             sub.getService().getDevice().getRoot().getDisplayString());
-                    detectedIPs.put(sub.getService().getDevice().getRoot(), detectedIP);
+                    serviceManager.addDetectedIP(sub.getService().getDevice().getRoot(), detectedIP);
                 }
             }
             // If the IP address is already got, the next call to getAddress() won't
             // need to be blocked.
-            booted = true;
+            serviceManager.setBooted(true);
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }

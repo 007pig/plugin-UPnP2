@@ -16,7 +16,6 @@ import org.fourthline.cling.support.model.PortMapping;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,20 +55,22 @@ public class IGDRegistryListener extends PortMappingListener {
 
         Logger.normal(this, "Remote device available: " + device.getDisplayString());
 
+        UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
+
         Service commonService;
         if ((commonService = discoverCommonService(device)) == null) return;
 
-        commonServices.add(commonService);
+        serviceManager.addCommonService(commonService);
 
         Service connectionService;
         if ((connectionService = discoverConnectionService(device)) == null) return;
 
-        connectionServices.add(connectionService);
+        serviceManager.addConnectionService(connectionService);
 
         // Add service events listener
         SubscriptionCallback callback = new IDGSubscriptionCallback(connectionService);
         upnpService.getControlPoint().execute(callback);
-        subscriptionCallbacks.put(connectionService, callback);
+        serviceManager.addSubscriptionCallback(connectionService, callback);
 
     }
 
@@ -80,9 +81,11 @@ public class IGDRegistryListener extends PortMappingListener {
 
         super.deviceRemoved(registry, device);
 
+        UPnPServiceManager serviceManager = UPnPServiceManager.getInstance();
+
         for (Service service : device.findServices()) {
             // End the subscription
-            SubscriptionCallback callback = subscriptionCallbacks.get(service);
+            SubscriptionCallback callback = serviceManager.getSubscriptionCallback(service);
 
             if (callback != null) {
                 callback.end();
@@ -94,14 +97,14 @@ public class IGDRegistryListener extends PortMappingListener {
                 }
 
                 // Remove subscription callback
-                subscriptionCallbacks.remove(service);
+                serviceManager.removeSubscriptionCallback(service);
             }
             // Remove Services
-            connectionServices.remove(service);
+            serviceManager.removeConnectionService(service);
         }
 
         // Clear detected IPs
-        detectedIPs.clear();
+        serviceManager.clearDetectedIPs();
 
     }
 
