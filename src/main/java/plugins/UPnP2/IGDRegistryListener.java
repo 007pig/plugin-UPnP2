@@ -68,7 +68,7 @@ public class IGDRegistryListener extends PortMappingListener {
         serviceManager.addConnectionService(connectionService);
 
         // Add service events listener
-        SubscriptionCallback callback = new IDGSubscriptionCallback(connectionService);
+        SubscriptionCallback callback = new IGDSubscriptionCallback(connectionService);
         upnpService.getControlPoint().execute(callback);
         serviceManager.addSubscriptionCallback(connectionService, callback);
 

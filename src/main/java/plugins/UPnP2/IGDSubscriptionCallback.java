@@ -22,7 +22,7 @@ import freenet.support.transport.ip.IPUtil;
 /**
  * Created by xiaoyu on 1/14/16. 2
  */
-class IDGSubscriptionCallback extends SubscriptionCallback {
+class IGDSubscriptionCallback extends SubscriptionCallback {
 
     private static volatile boolean logMINOR;
 
@@ -38,7 +38,7 @@ class IDGSubscriptionCallback extends SubscriptionCallback {
 
     private int renewalFailedCount = 0;
 
-    public IDGSubscriptionCallback(Service connectionService) {
+    public IGDSubscriptionCallback(Service connectionService) {
         super(connectionService, 600);
     }
 
@@ -77,7 +77,7 @@ class IDGSubscriptionCallback extends SubscriptionCallback {
                 upnpService.getRegistry().removeRemoteSubscription((RemoteGENASubscription)
                         sub);
 
-                SubscriptionCallback callback = new IDGSubscriptionCallback(service);
+                SubscriptionCallback callback = new IGDSubscriptionCallback(service);
                 upnpService.getControlPoint().execute(callback);
                 serviceManager.addSubscriptionCallback(service, callback);
             }
