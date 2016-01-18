@@ -21,14 +21,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.TimeUnit;
 
 import freenet.pluginmanager.DetectedIP;
 import freenet.pluginmanager.ForwardPort;
 import freenet.pluginmanager.ForwardPortCallback;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
-import freenet.support.Ticker;
 import freenet.support.transport.ip.IPUtil;
 import plugins.UPnP2.actions.GetCommonLinkProperties;
 import plugins.UPnP2.actions.GetExternalIPSync;
@@ -38,7 +36,7 @@ import plugins.UPnP2.actions.GetLinkLayerMaxBitRates;
  * Manage UPnP Services.
  * Singleton.
  */
-class UPnPServiceManager {
+class ServiceManager {
 
     private static volatile boolean logMINOR;
 
@@ -79,16 +77,10 @@ class UPnPServiceManager {
 
     private IGDRegistryListener registryListener;
 
-    private Set<ForwardPort> ports;
-    private ForwardPortCallback cb;
-
-    private Ticker ticker;
-
     /**
      * Initialize service manager
      */
-    public void init(Ticker ticker) {
-        this.ticker = ticker;
+    public void init() {
 
         // This will create necessary network resources for UPnP right away
         Logger.normal(this, "Starting Cling...");
@@ -103,13 +95,11 @@ class UPnPServiceManager {
     }
 
     public void shutdown() {
-        ticker.removeQueuedJob(portMappingRunnable);
-
         // Release all resources and advertise BYEBYE to other UPnP devices
         upnpService.shutdown();
     }
 
-    synchronized private void waitForBooting() {
+    synchronized public void waitForBooting() {
         // If no connection services available and it's the first call,
         // we retry 10 times for the plugin to get enough IGDs
         if (!booted) {
@@ -348,23 +338,7 @@ class UPnPServiceManager {
         return null;
     }
 
-    public void doPortMapping(Set<ForwardPort> ports, ForwardPortCallback cb) {
-
-        waitForBooting();
-
-        this.ports = ports;
-        this.cb = cb;
-
-        realDoPortMapping();
-    }
-
-    private Runnable portMappingRunnable = new Runnable() {
-        @Override
-        public void run() {
-            realDoPortMapping();
-        }
-    };
-    private void realDoPortMapping() {
+    public void addPortMappings(Set<ForwardPort> ports, ForwardPortCallback cb) {
         if (connectionServices.size() > 0) {
 
             Set<PortMapping> portMappings = new HashSet<>();
@@ -429,13 +403,11 @@ class UPnPServiceManager {
             Logger.warning(this, "Unable to get localIPs.");
         }
 
-        long now = System.currentTimeMillis();
-        ticker.queueTimedJob(portMappingRunnable, "portMappingRunnable" + now,
-                TimeUnit.MINUTES.toMillis(5), false, false);
-
     }
 
-
+    public void removeAllPortMappings() {
+        registryListener.removeAllPortMappings();
+    }
 
     // #############################
     // Getters and Setters

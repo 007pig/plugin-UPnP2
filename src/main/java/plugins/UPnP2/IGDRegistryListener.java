@@ -43,10 +43,10 @@ public class IGDRegistryListener extends PortMappingListener {
         });
     }
 
-    private UPnPServiceManager serviceManager;
+    private ServiceManager serviceManager;
     private UpnpService upnpService;
 
-    public IGDRegistryListener(UPnPServiceManager serviceManager) {
+    public IGDRegistryListener(ServiceManager serviceManager) {
         super(new PortMapping[0]);
 
         this.serviceManager = serviceManager;
@@ -177,6 +177,10 @@ public class IGDRegistryListener extends PortMappingListener {
 
         }
 
+    }
+
+    public void removeAllPortMappings() {
+        this.beforeShutdown(upnpService.getRegistry());
     }
 
     protected Service discoverCommonService(Device device) {

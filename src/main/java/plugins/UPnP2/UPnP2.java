@@ -35,7 +35,6 @@ import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 
 /*
- *  TODO: Separate fred related code (ticker) from service manager
  *  TODO: New return object for getRates()
  *
  */
@@ -60,7 +59,8 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
         });
     }
 
-    private UPnPServiceManager serviceManager;
+    private ServiceManager serviceManager;
+    private PortMappingTicker portMappingTicker;
 
 
     // ###################################
@@ -69,6 +69,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public void terminate() {
+        portMappingTicker.stopPortMapping();
         serviceManager.shutdown();
 
         Logger.normal(this, "UPnP2 plugin ended");
@@ -78,8 +79,10 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     public void runPlugin(PluginRespirator pr) {
         Logger.normal(this, "UPnP2 plugin started");
 
-        serviceManager = new UPnPServiceManager();
-        serviceManager.init(pr.getNode().getTicker());
+        serviceManager = new ServiceManager();
+        serviceManager.init();
+
+        portMappingTicker = new PortMappingTicker(serviceManager, pr.getNode().getTicker());
     }
 
     // ###################################
@@ -108,7 +111,7 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
     public void onChangePublicPorts(Set<ForwardPort> ports, ForwardPortCallback cb) {
         Logger.normal(this, "Calling onChangePublicPorts()");
 
-        serviceManager.doPortMapping(ports, cb);
+        portMappingTicker.startPortMapping(ports, cb);
     }
 
     // ###################################

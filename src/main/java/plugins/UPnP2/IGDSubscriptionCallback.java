@@ -35,10 +35,10 @@ class IGDSubscriptionCallback extends SubscriptionCallback {
         });
     }
 
-    private UPnPServiceManager serviceManager;
+    private ServiceManager serviceManager;
     private int renewalFailedCount = 0;
 
-    public IGDSubscriptionCallback(Service connectionService, UPnPServiceManager serviceManager) {
+    public IGDSubscriptionCallback(Service connectionService, ServiceManager serviceManager) {
         super(connectionService, 600);
         this.serviceManager = serviceManager;
     }
