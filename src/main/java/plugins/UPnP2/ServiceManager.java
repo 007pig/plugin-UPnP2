@@ -1,3 +1,20 @@
+/*
+ * This file is part of UPnP2, a plugin for Freenet.
+ *
+ * UPnP2 is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * UPnP2 is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with UPnP2.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package plugins.UPnP2;
 
 import org.fourthline.cling.UpnpService;
@@ -31,6 +48,7 @@ import freenet.support.transport.ip.IPUtil;
 import plugins.UPnP2.actions.GetCommonLinkProperties;
 import plugins.UPnP2.actions.GetExternalIPSync;
 import plugins.UPnP2.actions.GetLinkLayerMaxBitRates;
+import plugins.UPnP2.models.IGDRates;
 
 /**
  * Manage UPnP Services.
@@ -109,14 +127,14 @@ class ServiceManager {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        Thread.currentThread().interrupt();
                     }
                 } else {
                     // Devices found. Wait for 5 more seconds for more devices
                     try {
                         Thread.sleep(5000);
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        Thread.currentThread().interrupt();
                     }
                     break;
                 }
@@ -198,8 +216,8 @@ class ServiceManager {
         }
     }
 
-    public int getUpstramMaxBitRate() {
-        Logger.normal(this, "Calling getUpstramMaxBitRate()");
+    public int getUpstreamMaxBitRate() {
+        Logger.normal(this, "Calling getUpstreamMaxBitRate()");
 
         waitForBooting();
 
@@ -207,16 +225,16 @@ class ServiceManager {
             return -1;
         }
 
-        int[] rates = getRates();
+        IGDRates rates = getRates();
 
 
         if (rates == null) {
             return -1;
         }
 
-        Logger.normal(this, "Upstream MaxBitRate: " + rates[0]);
+        Logger.normal(this, "Upstream MaxBitRate: " + rates.getUpstreamMax());
 
-        return rates[0];
+        return rates.getUpstreamMax();
     }
 
     public int getDownstreamMaxBitRate() {
@@ -228,19 +246,19 @@ class ServiceManager {
             return -1;
         }
 
-        int[] rates = getRates();
+        IGDRates rates = getRates();
 
         if (rates == null) {
             return -1;
         }
 
-        Logger.normal(this, "Downstream MaxBitRate: " + rates[0]);
+        Logger.normal(this, "Downstream MaxBitRate: " + rates.getDownstreamMax());
 
-        return rates[1];
+        return rates.getDownstreamMax();
     }
 
 
-    private int[] getRates() {
+    private IGDRates getRates() {
 
         final List<Integer> upRates = new ArrayList<>();
         final List<Integer> downRates = new ArrayList<>();
@@ -286,7 +304,7 @@ class ServiceManager {
             for (int rate : downRates) {
                 downRatesSum += rate;
             }
-            return new int[]{upRatesSum, downRatesSum};
+            return new IGDRates(upRatesSum, downRatesSum);
         }
 
         // We get nothing from GetLinkLayerMaxBitRates. Try GetCommonLinkProperties
@@ -332,7 +350,7 @@ class ServiceManager {
             for (int rate : downRates2) {
                 downRatesSum += rate;
             }
-            return new int[]{upRatesSum, downRatesSum};
+            return new IGDRates(upRatesSum, downRatesSum);
         }
 
         return null;

@@ -34,11 +34,6 @@ import freenet.pluginmanager.PluginRespirator;
 import freenet.support.LogThresholdCallback;
 import freenet.support.Logger;
 
-/*
- *  TODO: New return object for getRates()
- *
- */
-
 /**
  * Second generation of UPnP plugin for Fred which is based on Cling.
  *
@@ -138,9 +133,9 @@ public class UPnP2 implements FredPlugin, FredPluginThreadless, FredPluginIPDete
 
     @Override
     public int getUpstramMaxBitRate() {
-        System.out.println("Calling getUpstramMaxBitRate()");
+        System.out.println("Calling getUpstreamMaxBitRate()");
 
-        return serviceManager.getUpstramMaxBitRate();
+        return serviceManager.getUpstreamMaxBitRate();
     }
 
     @Override

@@ -1,3 +1,20 @@
+/*
+ * This file is part of UPnP2, a plugin for Freenet.
+ *
+ * UPnP2 is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * UPnP2 is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with UPnP2.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package plugins.UPnP2;
 
 import org.fourthline.cling.UpnpService;
@@ -20,7 +37,8 @@ import freenet.support.Logger;
 import freenet.support.transport.ip.IPUtil;
 
 /**
- * Created by xiaoyu on 1/14/16. 2
+ * UPnP device event callbacks. Internet Gateway Devices will return its external IP in its callback
+ * values. We use it to monitor external IP changes.
  */
 class IGDSubscriptionCallback extends SubscriptionCallback {
 
@@ -77,7 +95,8 @@ class IGDSubscriptionCallback extends SubscriptionCallback {
                 upnpService.getRegistry().removeRemoteSubscription((RemoteGENASubscription)
                         sub);
 
-                SubscriptionCallback callback = new IGDSubscriptionCallback(service, serviceManager);
+                SubscriptionCallback callback = new IGDSubscriptionCallback(service,
+                        serviceManager);
                 upnpService.getControlPoint().execute(callback);
                 serviceManager.addSubscriptionCallback(service, callback);
             }
@@ -88,9 +107,11 @@ class IGDSubscriptionCallback extends SubscriptionCallback {
     @Override
     public void eventReceived(GENASubscription sub) {
 
-        Map values = sub.getCurrentValues();
+        // Once we received an event, it means Cling has found at least one device. So we can set
+        // booted to true.
+        serviceManager.setBooted(true);
 
-        System.out.println(values);
+        Map values = sub.getCurrentValues();
 
         StateVariableValue externalIPAddress =
                 (StateVariableValue) values.get("ExternalIPAddress");
@@ -105,12 +126,10 @@ class IGDSubscriptionCallback extends SubscriptionCallback {
                             .toString());
                     Logger.normal(this, "For device: " +
                             sub.getService().getDevice().getRoot().getDisplayString());
-                    serviceManager.addDetectedIP(sub.getService().getDevice().getRoot(), detectedIP);
+                    serviceManager.addDetectedIP(sub.getService().getDevice().getRoot(),
+                            detectedIP);
                 }
             }
-            // If the IP address is already got, the next call to getAddress() won't
-            // need to be blocked.
-            serviceManager.setBooted(true);
         } catch (UnknownHostException e) {
             e.printStackTrace();
         }
